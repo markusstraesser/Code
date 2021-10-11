@@ -2,6 +2,7 @@
 
 from serial import Serial
 from datetime import datetime
+import numpy as np
 
 
 def readSerial(ser: Serial):
@@ -11,7 +12,17 @@ def readSerial(ser: Serial):
         raw_pres_val = raw_pres_val.decode(encoding="utf8")
         raw_pres_val = raw_pres_val.replace("\r\n", "")
         timestamp = datetime.now()
-        return timestamp, int(float(raw_pres_val))
+        return timestamp, float(raw_pres_val)
+
+def tare(s):
+    '''Returns the first read value'''
+    while True:
+        val = readSerial(s)
+        if val:
+            return val
+
+    
+
 
 
 def writeSerialToCSV(filepath, data: tuple):

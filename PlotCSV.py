@@ -16,12 +16,10 @@ app = pg.mkQApp("BCG Data")
 win = pg.GraphicsLayoutWidget(show=True, size=(1400, 800), title="Dashboard")
 win.setWindowTitle("Dashboard")
 
-# Enable antialiasing for prettier plots
-pg.setConfigOptions(antialias=True)
 # create the plot object
 plot1 = win.addPlot(title="Raw Ballistocardiography Data")
 # plot the data
-plot1.plot(data["Pressure"], pen=pg.mkPen(0, 153, 255))
+plot1.plot(data["Pressure"], pen=pg.mkPen((0, 153, 255), width=2))
 
 # create the GUI-instance of QApplication
 if __name__ == "__main__":

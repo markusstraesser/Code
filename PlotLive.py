@@ -9,27 +9,40 @@ import ArduinoSerial
 
 app = QtGui.QApplication([])
 
+
 p = pg.plot(title='Dashboard')
 p.setAntialiasing(aa=True)
-data = np.zeros(1200, dtype='int')
-curve = p.plot(pen=mkColor(0, 153, 255))
+p.setLabel('left', 'Value')
+p.setLabel('bottom', 'Samples')
+
+# set the number of samples in the window
+data = np.zeros(1500)
+
+# add Plot
+curve = p.plot(pen=mkColor(51, 102, 255))
+
+p.showMaximized()
 
 PORT = "COM4"
 SER = ArduinoSerial.createSerial(PORT)
+
+tare = ArduinoSerial.tare(SER)[1]
 
 def update():
     global data
     raw = ArduinoSerial.readSerial(SER)
     if raw:
         data[:-1] = data[1:]
-        data[-1] = raw[1]
+
+        # subtract the first read value to zero the Plot
+        data[-1] = raw[1]-tare
         curve.setData(data)
         app.processEvents()
 
 
 timer = pg.QtCore.QTimer()
 timer.timeout.connect(update)
-timer.start(0)
+timer.start(1)
 
 if __name__ == '__main__':
     import sys
