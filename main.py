@@ -1,3 +1,5 @@
+'''Entry point of the program'''
+
 import ArduinoSerial
 
 if __name__ == "__main__":
