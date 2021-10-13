@@ -34,6 +34,7 @@ def update():
     global data
     raw = ArduinoSerial.readSerial(SER)
     if raw:
+        # shift left
         data[:-1] = data[1:]
 
         # subtract the offset for every new value to zero the Plot
