@@ -6,12 +6,12 @@ import numpy as np
 
 
 def readSerial(ser: Serial):
-    """Reads Arduino 'Serial.println()' bytes from a Serial Port, converts to float and includes a timestamp in milliseconds"""
+    """Reads Arduino 'Serial.println()' bytes from a Serial Port, converts to float and includes a timestamp in microseconds"""
     if ser.in_waiting > 0:
         raw_pres_val = ser.readline()
         raw_pres_val = raw_pres_val.decode(encoding="utf8")
         raw_pres_val = raw_pres_val.replace("\r\n", "")
-        timestamp = round(time.time() * 1000)
+        timestamp = round(time.time() * 1000000)
         return timestamp, float(raw_pres_val)
 
 
@@ -27,16 +27,12 @@ def tare(ser: Serial, numS: int):
     return sum(buf) / len(buf)
 
 
-def writeSerialToCSV(filepath: str, data: tuple):
+def writeSerialToCSV(filepath: str, data: tuple, starttime: int):
     """Converts tuple to String and appends data to a CSV file"""
-    # convert to string, milliseconds have 4 decimal places
-
-    # TODO Format the CSV into seperate collums for Y, m, d, H, M etc.
-    ts_str = str(data[0])
-    raw_val_str = str(data[1])
-    data_str = ts_str + ", " + raw_val_str + "\n"
+    # convert to string
+    str_towrite = str(data[0] - starttime) + ", " + str(data[1]) + "\n"
     f = open(filepath, "a")
-    f.write(data_str)
+    f.write(str_towrite)
     f.close()
 
 

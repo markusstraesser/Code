@@ -1,3 +1,6 @@
 /.venv
 /Sensordata
 /__pycache__
+/recordToCSV.spec
+/dist
+/build

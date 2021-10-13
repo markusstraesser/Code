@@ -1,10 +1,10 @@
-'''Simple CSV Plot using PyQTGraph'''
+"""Simple CSV Plot using PyQTGraph"""
 
 import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui, QtCore
 
-f = "Sensordata/RawData.csv"
+f = "Sensordata\RawData13102021.csv"
 
 # get the Data
 data = np.genfromtxt(f, delimiter=",", names=["Timestamp", "Pressure"])
