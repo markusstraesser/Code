@@ -12,10 +12,10 @@ def normalize(data):
 
 def getSamplingFreq(timestamps):
     """calculates sampling frequenzy for a given set of microsecond timestamps"""
-    t_start = timestamps[0]
-    t_stop = timestamps[-1]
-    delta_t = t_stop - t_start
-    fs = len(timestamps) / delta_t * 1000000
+    t_start = timestamps[0]  # ts of first sample
+    t_stop = timestamps[-1]  # ts of last sample
+    delta_t = t_stop - t_start  # time difference in microseconds
+    fs = len(timestamps) / delta_t * 1000000  # sampling frequenzy in Hz
     return fs
 
 
@@ -58,11 +58,13 @@ if __name__ == "__main__":
         FILE, dtype=(float, float), names=["timestamps", "value"], delimiter=","
     )
     print("Raw Data:", raw_data)
+
+    # normalize the dataset
     norm_data = raw_data
     norm_data["value"] = normalize(raw_data["value"])
     print("Normalized Data:", norm_data)
 
-    # sampling frequenzy
+    # determine sampling frequenzy
     fs = getSamplingFreq(norm_data["timestamps"])
     print(fs)
 
