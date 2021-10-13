@@ -1,4 +1,4 @@
-"""Reads bytes from Serial and decodes to utf-8, appends a timestamp and can write to CSV"""
+"""Reads bytes from Serial and decodes to utf-8, appends a timestamp in microseconds and can write to CSV. Tare is provided"""
 
 from serial import Serial
 import time
@@ -16,19 +16,19 @@ def readSerial(ser: Serial):
 
 
 def tare(ser: Serial, numS: int):
-    """Returns the average of the 10 first read values"""
+    """Returns the average of numS number of read values"""
     buf = np.empty(numS)
     ptr = 0
-    while ptr < numS:
+    while ptr < numS:  # read until number of samples is reached
         val = readSerial(ser)
         if val:
             buf[ptr] = val[1]
             ptr += 1
-    return sum(buf) / len(buf)
+    return sum(buf) / len(buf)  # return average value
 
 
 def writeSerialToCSV(filepath: str, data: tuple, starttime: int):
-    """Converts tuple to String and appends data to a CSV file"""
+    """Writes tuple of timestamp and value to String and appends data to a CSV file. Timestamps are set to zero at the start"""
     # convert to string
     str_towrite = str(data[0] - starttime) + ", " + str(data[1]) + "\n"
     f = open(filepath, "a")
