@@ -11,4 +11,4 @@ if __name__ == "__main__":
         data = ArduinoSerial.readSerial(SER)
         if data:
             ArduinoSerial.writeSerialToCSV(FILEPATH, data)
-            print(data[0].strftime("%d.%m.%Y %H:%M:%S.%f")[:-2],': ',data[1], end="\r")
+            print(str(data[0]) + ': ' + str(data[1]), end="\r")
