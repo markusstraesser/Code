@@ -3,6 +3,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+from scipy.signal import butter, lfilter, freqz
 
 
 def getSamplingFreq(timestamp: pd.DataFrame):
@@ -13,7 +14,19 @@ def getSamplingFreq(timestamp: pd.DataFrame):
     fs = len(timestamp) / delta_t * 1000000  # sampling frequency in Hz
     return fs
 
-    data.resample(12500).interpolate(method="spline", order=2)
+
+def butter_bandpass(lowcut, highcut, fs, order):
+    nyq = 0.5 * fs
+    low = lowcut / nyq
+    high = highcut / nyq
+    b, a = butter(order, [low, high], btype="band")
+    return b, a
+
+
+def butter_bandpass_filter(data, lowcut, highcut, fs, order):
+    b, a = butter_bandpass(lowcut, highcut, fs, order=order)
+    y = lfilter(b, a, data)
+    return y
 
 
 def HeartR(data: pd.DataFrame):
@@ -60,74 +73,73 @@ if __name__ == "__main__":
     # get smoothed dataset
     data["smoothed_ts"] = data["timestamp"].rolling(5, win_type="hanning").mean()
     data["smoothed_v"] = data["value"].rolling(5, win_type="hanning").mean()
+    data["smoothed_ts"] = data["smoothed_ts"].bfill()
+    data["smoothed_v"] = data["smoothed_v"].bfill()
 
     # define bounds for section
-    lower = 33050
-    upper = 33450
+    lower = 18000
+    upper = 27000
 
     # determine sampling frequencies
     fs = getSamplingFreq(data["timestamp"])
-    fs_2 = getSamplingFreq(data["timestamp"].iloc[lower:upper])
-    print(f"\nSampling Freq: {fs}\nSampling Freq Section: {fs_2}\n")
+    fs2 = getSamplingFreq(data["timestamp"].iloc[lower:upper])
+    print(f"\nSampling Freq: {fs}\nSampling Freq Section: {fs2}\n")
+    fs_sm = float(getSamplingFreq(data["smoothed_ts"]))
+    fs2_sm = getSamplingFreq(data["smoothed_ts"].iloc[lower:upper])
 
+    # filter the two smoothed datasets
+
+    # TODO create filter scripts for hr, rr, mvt
+    lowcut = 0.0933
+    highcut = 0.266
+    data["filtered_v"] = butter_bandpass_filter(
+        data["smoothed_v"].to_numpy(dtype=float),
+        lowcut,
+        highcut,
+        fs_sm,
+        order=3,
+    )
+    print(data)
     # plot everything
-    fig, ax = plt.subplots(2, 2)
+    fig, ax = plt.subplots(4, 1)
     fig.set_size_inches(16, 8)
     plt.suptitle("BCG Sensor Data")
-    for i in range(2):
-        for j in range(2):
-            ax[i, j].set_xlabel("Time (µs)")
-            ax[i, j].set_ylabel("Sensor Value")
+    for i in range(4):
+        ax[i].set_xlabel("Time (µs)")
+        ax[i].set_ylabel("Sensor Value")
 
-    ax[0, 0].plot(data["timestamp"], data["value"], label="Raw Data")
-    ax[0, 0].plot(
-        data["timestamp"].iloc[lower:upper],
-        data["value"].iloc[lower:upper],
-        color="orange",
+    ax[0].plot(
+        data["smoothed_ts"], data["smoothed_v"], label="Smoothed Data", color="blue"
     )
-    ax[0, 0].ticklabel_format(scilimits=(6, 6), useMathText=True)
-    ax[0, 0].legend(loc="upper right")
-    ax[0, 0].text(
-        0, data["value"].min(), f"Sampling Frequency complete Data: {fs:.3f} Hertz"
-    )
-    ax[0, 1].plot(data["smoothed_ts"], data["smoothed_v"], label="Smoothed Data")
-    ax[0, 1].plot(
-        data["smoothed_ts"].iloc[lower:upper],
-        data["smoothed_v"].iloc[lower:upper],
-        color="orange",
-    )
-    ax[0, 1].ticklabel_format(scilimits=(6, 6), useMathText=True)
-    ax[0, 1].legend(loc="upper right")
-    ax[0, 1].text(
+
+    ax[0].ticklabel_format(scilimits=(6, 6), useMathText=True)
+    ax[0].legend(loc="upper right")
+    ax[0].text(
         0,
         data["smoothed_v"].min(),
-        f"Sampling Frequency complete smoothed Data: {fs:.3f} Hertz",
+        f"Sampling Frequency complete Data: {fs:.3f} Hertz\nSampling Frequency complete smoothed Data: {fs_sm:.3f} Hertz",
     )
-    ax[1, 0].plot(
-        data["timestamp"].iloc[lower:upper],
-        data["value"].iloc[lower:upper],
-        label="Raw Data Section",
-        color="orange",
+    ax[1].plot(
+        data["smoothed_ts"], data["filtered_v"], label="Filtered Data", color="orange"
     )
-    ax[1, 0].legend(loc="upper right")
-    ax[1, 0].ticklabel_format(scilimits=(6, 6), useMathText=True)
-    ax[1, 0].text(
-        data["timestamp"].iloc[lower:upper].min(),
-        data["value"].iloc[lower:upper].min(),
-        f"Sampling Frequency Section: {fs_2:.3f} Hertz",
-    )
-    ax[1, 1].plot(
+    ax[2].plot(
         data["smoothed_ts"].iloc[lower:upper],
         data["smoothed_v"].iloc[lower:upper],
         label="Smoothed Data Section",
-        color="orange",
+        color="blue",
     )
-    ax[1, 1].legend(loc="upper right")
-    ax[1, 1].ticklabel_format(scilimits=(6, 6), useMathText=True)
-    ax[1, 1].text(
+    ax[2].legend(loc="upper right")
+    ax[2].ticklabel_format(scilimits=(6, 6), useMathText=True)
+    ax[2].text(
         data["smoothed_ts"].iloc[lower:upper].min(),
         data["smoothed_v"].iloc[lower:upper].min(),
-        f"Sampling Frequency smoothed Section: {fs_2:.3f} Hertz",
+        f"Sampling Frequency Section: {fs2:.3f} Hertz\nSampling Frequency smoothed Section: {fs2_sm:.3f} Hertz",
+    )
+    ax[3].plot(
+        data["smoothed_ts"].iloc[lower:upper],
+        data["filtered_v"].iloc[lower:upper],
+        label="Smoothed Data Section",
+        color="orange",
     )
     print(data)
     plt.show()
