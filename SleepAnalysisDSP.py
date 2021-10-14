@@ -15,7 +15,7 @@ def getSamplingFreq(timestamp: pd.DataFrame):
     return fs
 
 
-def butter_bandpass(lowcut, highcut, fs, order):
+def butter_bandpass(lowcut, highcut, fs, order=5):
     nyq = 0.5 * fs
     low = lowcut / nyq
     high = highcut / nyq
@@ -77,8 +77,8 @@ if __name__ == "__main__":
     data["smoothed_v"] = data["smoothed_v"].bfill()
 
     # define bounds for section
-    lower = 18000
-    upper = 27000
+    lower = 1000
+    upper = 9000
 
     # determine sampling frequencies
     fs = getSamplingFreq(data["timestamp"])
@@ -90,8 +90,8 @@ if __name__ == "__main__":
     # filter the two smoothed datasets
 
     # TODO create filter scripts for hr, rr, mvt
-    lowcut = 0.0933
-    highcut = 0.266
+    lowcut = 0.125
+    highcut = 0.66
     data["filtered_v"] = butter_bandpass_filter(
         data["smoothed_v"].to_numpy(dtype=float),
         lowcut,
@@ -107,6 +107,7 @@ if __name__ == "__main__":
     for i in range(4):
         ax[i].set_xlabel("Time (µs)")
         ax[i].set_ylabel("Sensor Value")
+        ax[i].xaxis.grid(which="both")
 
     ax[0].plot(
         data["smoothed_ts"], data["smoothed_v"], label="Smoothed Data", color="blue"
