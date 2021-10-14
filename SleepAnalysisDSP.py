@@ -1,27 +1,26 @@
 """Reads Raw Sensor Data from CSV and performs a Sleep Analysis. Output parameters are: HeartR, RespR, MvtR, SleepPhase"""
+
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 
 
-def normalize(data):
-    a = 0
-    b = max(data)
-    norm_data = (data - np.min(data)) * b / (np.max(data) - np.min(data))
-    return norm_data
-
-
-def getSamplingFreq(timestamps):
-    """calculates sampling frequenzy for a given set of microsecond timestamps"""
-    t_start = timestamps[0]  # ts of first sample
-    t_stop = timestamps[-1]  # ts of last sample
+def getSamplingFreq(timestamp: pd.DataFrame):
+    """calculates sampling frequency for a given set of microsecond timestamps"""
+    t_start = timestamp.iloc[0]  # ts of first sample
+    t_stop = timestamp.iloc[-1]  # ts of last sample
     delta_t = t_stop - t_start  # time difference in microseconds
-    fs = len(timestamps) / delta_t * 1000000  # sampling frequenzy in Hz
+    fs = len(timestamp) / delta_t * 1000000  # sampling frequency in Hz
     return fs
 
+    data.resample(12500).interpolate(method="spline", order=2)
 
-def HeartR(data):
+
+def HeartR(data: pd.DataFrame):
     # TODO write heart rate calculation
-    hr_vals = np.empty(dtype=int)
+    # get sampling frequency
+    fs = getSamplingFreq(data["timestamp"])
+    hr_vals = data.to_numpy(dtype=float)
     # go through the data and calculate HR for every Minute
     return hr_vals
 
@@ -52,23 +51,83 @@ def SleepPhase():
 
 
 if __name__ == "__main__":
-    # read the csv file
+    # read the csv file into a pandas dataframe
     FILE = "Sensordata\RawData13102021.csv"
-    raw_data = np.genfromtxt(
-        FILE, dtype=(float, float), names=["timestamps", "value"], delimiter=","
+    data = pd.read_csv(FILE, names=["timestamp", "value"], delimiter=",")
+
+    print(data)
+
+    # get smoothed dataset
+    data["smoothed_ts"] = data["timestamp"].rolling(5, win_type="hanning").mean()
+    data["smoothed_v"] = data["value"].rolling(5, win_type="hanning").mean()
+
+    # define bounds for section
+    lower = 33050
+    upper = 33450
+
+    # determine sampling frequencies
+    fs = getSamplingFreq(data["timestamp"])
+    fs_2 = getSamplingFreq(data["timestamp"].iloc[lower:upper])
+    print(f"\nSampling Freq: {fs}\nSampling Freq Section: {fs_2}\n")
+
+    # plot everything
+    fig, ax = plt.subplots(2, 2)
+    fig.set_size_inches(16, 8)
+    plt.suptitle("BCG Sensor Data")
+    for i in range(2):
+        for j in range(2):
+            ax[i, j].set_xlabel("Time (µs)")
+            ax[i, j].set_ylabel("Sensor Value")
+
+    ax[0, 0].plot(data["timestamp"], data["value"], label="Raw Data")
+    ax[0, 0].plot(
+        data["timestamp"].iloc[lower:upper],
+        data["value"].iloc[lower:upper],
+        color="orange",
     )
-    print("Raw Data:", raw_data)
-
-    # normalize the dataset
-    norm_data = raw_data
-    norm_data["value"] = normalize(raw_data["value"])
-    print("Normalized Data:", norm_data)
-
-    # determine sampling frequenzy
-    fs = getSamplingFreq(norm_data["timestamps"])
-    print(fs)
-
-    plt.figure(figsize=(16, 5))
-    plt.plot(norm_data["timestamps"], norm_data["value"])
-    plt.text(0, 0, "Sampling Frequenzy: %.3f Hertz" % fs)
+    ax[0, 0].ticklabel_format(scilimits=(6, 6), useMathText=True)
+    ax[0, 0].legend(loc="upper right")
+    ax[0, 0].text(
+        0, data["value"].min(), f"Sampling Frequency complete Data: {fs:.3f} Hertz"
+    )
+    ax[0, 1].plot(data["smoothed_ts"], data["smoothed_v"], label="Smoothed Data")
+    ax[0, 1].plot(
+        data["smoothed_ts"].iloc[lower:upper],
+        data["smoothed_v"].iloc[lower:upper],
+        color="orange",
+    )
+    ax[0, 1].ticklabel_format(scilimits=(6, 6), useMathText=True)
+    ax[0, 1].legend(loc="upper right")
+    ax[0, 1].text(
+        0,
+        data["smoothed_v"].min(),
+        f"Sampling Frequency complete smoothed Data: {fs:.3f} Hertz",
+    )
+    ax[1, 0].plot(
+        data["timestamp"].iloc[lower:upper],
+        data["value"].iloc[lower:upper],
+        label="Raw Data Section",
+        color="orange",
+    )
+    ax[1, 0].legend(loc="upper right")
+    ax[1, 0].ticklabel_format(scilimits=(6, 6), useMathText=True)
+    ax[1, 0].text(
+        data["timestamp"].iloc[lower:upper].min(),
+        data["value"].iloc[lower:upper].min(),
+        f"Sampling Frequency Section: {fs_2:.3f} Hertz",
+    )
+    ax[1, 1].plot(
+        data["smoothed_ts"].iloc[lower:upper],
+        data["smoothed_v"].iloc[lower:upper],
+        label="Smoothed Data Section",
+        color="orange",
+    )
+    ax[1, 1].legend(loc="upper right")
+    ax[1, 1].ticklabel_format(scilimits=(6, 6), useMathText=True)
+    ax[1, 1].text(
+        data["smoothed_ts"].iloc[lower:upper].min(),
+        data["smoothed_v"].iloc[lower:upper].min(),
+        f"Sampling Frequency smoothed Section: {fs_2:.3f} Hertz",
+    )
+    print(data)
     plt.show()
