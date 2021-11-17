@@ -4,22 +4,24 @@ from datetime import timedelta
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-from scipy.signal import butter, lfilter, freqz
+from scipy.signal import butter, lfilter
+import heartpy as hp
+from scipy.signal import resample
 
 
-def getSamplingFreq(timestamp: pd.DataFrame):
+def getSamplingFreq(timestamp):
     """calculates sampling frequency for a given set of microsecond timestamps"""
-    t_start = timestamp.iloc[0]  # ts of first sample
-    t_stop = timestamp.iloc[-1]  # ts of last sample
+    t_start = timestamp[0]  # ts of first sample
+    t_stop = timestamp[-1]  # ts of last sample
     delta_t = t_stop - t_start  # time difference in microseconds
     # number of samples / time in seconds: sampling frequency in Hz
     fs = len(timestamp) / delta_t * 1000000
     return fs
 
 
-def getDuration(timestamp: pd.DataFrame):
-    t_start = timestamp.iloc[0]  # ts of first sample
-    t_stop = timestamp.iloc[-1]  # ts of last sample
+def getDuration(timestamp):
+    t_start = timestamp[0]  # ts of first sample
+    t_stop = timestamp[-1]  # ts of last sample
     delta_t = int((t_stop - t_start) / 1000000)  # time difference in seconds
     return str(timedelta(seconds=delta_t))
 
@@ -38,35 +40,52 @@ def butter_bandpass_filter(data, lowcut, highcut, fs, order):
     return y
 
 
-def filter_hr(smoothed_v: pd.DataFrame):
+def filter_hr(smoothed_v: pd.DataFrame, fs):
     lowcut = 0.7
-    highcut = 3.0
+    highcut = 2.7
     data["filtered_hr"] = butter_bandpass_filter(
         smoothed_v.to_numpy(dtype=float),
         lowcut,
         highcut,
-        fs_sm,
-        order=4,
+        fs,
+        order=5,
     )
 
 
-def HeartR(data: pd.DataFrame):
-    # TODO write heart rate calculation
-    # get sampling frequency
-    fs = getSamplingFreq(data["timestamp"])
-    hr_vals = data.to_numpy(dtype=float)
-    # go through the data and calculate HR for every Minute
-    return hr_vals
+def HeartR(hr: list, fs):
+    lower = 0
+    upper = int(fs * 30)
+    print(f"Sampling Frequency Resampled: {fs:.3f}")
+    timer = 0
+    hr_vals, timecodes = [], []
+    # print(len(ts))
+    while upper <= len(hr):
+        try:
+            wd, m = hp.process(
+                hr[lower:upper],
+                fs,
+                clean_rr=True,
+            )
+            hp.process
+            hr_vals.append(m["bpm"])
+            timecodes.append(timer)
+        except:
+            timecodes.append(timer)
+            hr_vals.append(0)
+        lower = upper
+        upper += int(fs * 30)
+        timer += 0.5
+    return hr_vals, timecodes
 
 
-def filter_rr(smoothed_v: pd.DataFrame):
+def filter_rr(smoothed_v: pd.DataFrame, fs):
     lowcut = 0.1
     highcut = 0.66
     data["filtered_rr"] = butter_bandpass_filter(
         smoothed_v.to_numpy(dtype=float),
         lowcut,
         highcut,
-        fs_sm,
+        fs,
         order=3,
     )
 
@@ -96,7 +115,22 @@ def SleepPhase():
     return sp_vals
 
 
-def plot_filt(lower_b, upper_b, param):
+# all the plotting stuff
+def plot_dash(
+    rawdata,
+    hrdata_filt,
+    rrdata_filt,
+    hr_sections,
+    hrv_sections,
+    rr_sections,
+    mvt_sections,
+    sleepphases,
+):
+    """Creates Plots for:
+    - Complete Raw Dataset
+    - Sections of Filtered Heartrate and Respiratory Signal
+    - Complete Dataset of Heartrate, HR-Variability, Respiratory Rate and Movement in 30 Second Sections
+    - Complete Sleep Phases"""
     fig, ax = plt.subplots(3, 1)
     fig.set_size_inches(16, 9)
     tot_duration = getDuration(data["smoothed_ts"])
@@ -168,30 +202,32 @@ if __name__ == "__main__":
     FILE = "Sensordata\RawData15102021.csv"
     data = pd.read_csv(FILE, names=["timestamp", "value"], delimiter=",")
 
-    print(data)
-
-    # get smoothed dataset
+    # calculate smoothed dataset and backfill
     data["smoothed_ts"] = data["timestamp"].rolling(5, win_type="hanning").mean()
     data["smoothed_v"] = data["value"].rolling(5, win_type="hanning").mean()
     data["smoothed_ts"] = data["smoothed_ts"].bfill()
     data["smoothed_v"] = data["smoothed_v"].bfill()
-
-    # define bounds for section
-    sec_low = 1705000
-    sec_high = 1708800
-
-    # determine sampling frequencies
-    fs = getSamplingFreq(data["timestamp"])
-    fs2 = getSamplingFreq(data["timestamp"].iloc[sec_low:sec_high])
-    print(f"\nSampling Freq: {fs}\nSampling Freq Section: {fs2}\n")
-    fs_sm = float(getSamplingFreq(data["smoothed_ts"]))
-    fs2_sm = getSamplingFreq(data["smoothed_ts"].iloc[sec_low:sec_high])
+    fs_sm = getSamplingFreq(data["smoothed_ts"].to_numpy())
+    print(f"Sampling Frequency: {fs_sm:.3f}")
 
     # filter the smoothed datasets
-    filter_rr(data["smoothed_v"])
-    filter_hr(data["smoothed_v"])
+    filter_hr(data["smoothed_v"], fs_sm)
+    hr_filt = data["filtered_hr"].to_list()
+    res_hr_filt = resample(hr_filt, len(hr_filt) * 4)
 
-    print(data)
-    # plot
-    plot_filt(sec_low, sec_high, "rr")
-    plot_filt(sec_low, sec_high, "hr")
+    # Calculate Heartrates, Respiratory Rates, HRV and Movement for 30 Second Intervals
+    heartrates, timecodes = HeartR(res_hr_filt, (fs_sm * 4))
+
+    # Plot everything
+    plt.figure(figsize=(16, 5))
+    plt.subplot(211)
+    plt.title(
+        "Heart Rate in 30 Second Intervals, Total Time: "
+        + getDuration(data["smoothed_ts"].to_list())
+    )
+    plt.xlabel("Time [minutes]")
+    plt.ylabel("Heartrate [bpm]")
+    plt.bar(timecodes, heartrates, width=0.5)
+    plt.subplot(212)
+    plt.plot(hr_filt)
+    plt.show()
