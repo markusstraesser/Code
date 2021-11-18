@@ -59,14 +59,9 @@ def HR_HRV(hr: list, fs):
     print(f"Sampling Frequency Resampled: {fs:.3f}")
     timer = 0
     hr_vals, hrv_vals, timecodes = [], [], []
-    # print(len(ts))
     while upper <= len(hr):
         try:
-            wd, m = hp.process(
-                hr[lower:upper],
-                fs,
-                clean_rr=True,
-            )
+            wd, m = hp.process(hr[lower:upper], fs, clean_rr=True, high_precision=True)
             hr_vals.append(m["bpm"])
             hrv_vals.append(m["rmssd"])
             timecodes.append(timer)
