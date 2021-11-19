@@ -56,19 +56,21 @@ def filter_hr(smoothed_v: pd.DataFrame, fs):
 def HR_HRV(hr: list, fs):
     lower = 0
     upper = int(fs * 60)
-    print(f"Sampling Frequency Resampled: {fs:.3f}")
     timer = 0
     hr_vals, hrv_vals, timecodes = [], [], []
     while upper <= len(hr):
         try:
-            wd, m = hp.process(hr[lower:upper], fs, clean_rr=True, high_precision=True)
+            _, m = hp.process(
+                hp.scale_data(hr[lower:upper]),
+                sample_rate=fs,
+                clean_rr=True,
+                high_precision=True,
+            )
             hr_vals.append(m["bpm"])
             hrv_vals.append(m["rmssd"])
             timecodes.append(timer)
         except:
-            hr_vals.append(0)
-            hrv_vals.append(0)
-            timecodes.append(timer)
+            pass
         lower = upper
         upper += int(fs * 60)
         timer += 1
@@ -89,28 +91,25 @@ def filter_rr(smoothed_v: pd.DataFrame, fs):
 
 def RespR(rr: list, fs):
     lower = 0
-    upper = int(fs * 30)
-    print(f"Sampling Frequency Resampled: {fs:.3f}")
+    upper = int(fs * 60)
     timer = 0
-    rr_vals, timecodes = [], []
+    rr_vals, timecodes, diffs = [], [], []
     # print(len(ts))
-    while upper <= len(hr):
-        try:
-            wd, m = hp.process(
-                rr[lower:upper],
-                fs,
-                clean_rr=True,
-            )
-            hp.process
-            hr_vals.append(m["bpm"])
-            timecodes.append(timer)
-        except:
-            timecodes.append(timer)
-            hr_vals.append(0)
+    while upper <= len(rr):
+        # try:
+        peaks, _ = find_peaks(rr[lower:upper], height=0, distance=fs * 2, width=80)
+        for i in range(len(peaks) - 1):
+            diffs.append(peaks[i + 1] - peaks[i])
+        rr_vals.append((60 * fs) / np.mean(diffs))
+        diffs = []
+        timecodes.append(timer)
+        #  except:
+        #      timecodes.append(timer)
+        #      rr_vals.append(0)
         lower = upper
-        upper += int(fs * 30)
-        timer += 0.5
-    return hr_vals, timecodes
+        upper += int(fs * 60)
+        timer += 1
+    return rr_vals, timecodes
 
 
 def MvtR(data):
@@ -118,7 +117,9 @@ def MvtR(data):
     mr_vals = np.empty()
     # go through the data and calculate MR for every Minute
 
-    # Ansatz: Differenz Max-Min Wert des Druckwerts für jede Minute berechnen, dann Schwellenwert für die Nacht bestimmen, wann Bewegung viel und wann wenig ist
+    # Ansatz: Differenz Max-Min Wert des Druckwerts für jede
+    # Minute berechnen, dann Schwellenwert für die Nacht bestimmen,
+    # wann Bewegung viel und wann wenig ist
 
     return mr_vals
 
@@ -133,14 +134,16 @@ def SleepPhase():
 
 # all the plotting stuff
 def plot_dash(
-    rawdata,
+    raw_data,
     hrdata_filt,
     rrdata_filt,
     hr_sections,
     hrv_sections,
-    # rr_sections,
+    rr_sections,
     # mvt_sections,
-    section_timestamps
+    raw_timestamps,
+    hr_section_timestamps,
+    rr_section_timestamps,
     # sleep_phases,
 ):
     """Creates Plots for:
@@ -168,16 +171,23 @@ def plot_dash(
     ax7 = fig.add_subplot(gs[2:4, 3])
     ax8 = fig.add_subplot(gs[-2:, :])
 
-    ax1.plot(rawdata)
+    ax1.plot(raw_timestamps / 60_000_000, raw_data)
     ax1.set_title("Raw Sensor Data")
-    ax2.plot(rrdata_filt[250000:252575])
+    ax2.plot(
+        np.linspace(0, 2575 / fs_sm, 2575),
+        rrdata_filt[250000:252575],
+        color="orange",
+    )
     ax2.set_title("Filtered Respiratory Signal")
-    ax3.plot(hrdata_filt[250000:252575])
+    ax3.plot(
+        np.linspace(0, 2575 / fs_sm, 2575), hrdata_filt[250000:252575], color="green"
+    )
     ax3.set_title("Filtered Heartrate Signal")
+    ax4.scatter(rr_section_timestamps, rr_sections, color="orange", s=5)
     ax4.set_title("Respiratory Rate in 1 Minute Intervals")
-    ax5.bar(section_timestamps, hr_sections, width=1)
+    ax5.scatter(hr_section_timestamps, hr_sections, color="green", s=5)
     ax5.set_title("Heart Rate in 1 Minute Intervals")
-    ax6.bar(section_timestamps, hrv_sections, width=1)
+    ax6.scatter(hr_section_timestamps, hrv_sections, color="teal", s=5)
     ax6.set_title("Heart Rate Variability in 1 Minute Intervals")
     ax7.set_title("Movement in 1 Minute Intervals")
     ax8.set_title("Sleep Phases")
@@ -203,12 +213,23 @@ if __name__ == "__main__":
     # filter and upsample the smoothed datasets
     filter_hr(data["smoothed_v"], fs_sm)
     hr_filt = data["filtered_hr"].to_list()
-    res_hr_filt = resample(hr_filt, len(hr_filt) * 2)
+    res_hr_filt = resample(hr_filt, len(hr_filt) * 4)
     filter_rr(data["smoothed_v"], fs_sm)
     rr_filt = data["filtered_rr"].to_list()
 
     # Calculate Heartrates, Respiratory Rates, HRV and Movement for 30 Second Intervals
-    heartrates, rmssd, hr_timecodes = HR_HRV(res_hr_filt, (fs_sm * 2))
+    heartrates, rmssd, hr_timecodes = HR_HRV(res_hr_filt, (fs_sm * 4))
+    resp_rates, rr_timecodes = RespR(rr_filt, fs_sm)
 
     # Plot everything
-    plot_dash(data["value"], hr_filt, rr_filt, heartrates, rmssd, hr_timecodes)
+    plot_dash(
+        data["smoothed_v"],
+        hr_filt,
+        rr_filt,
+        heartrates,
+        rmssd,
+        resp_rates,
+        data["smoothed_ts"],
+        hr_timecodes,
+        rr_timecodes,
+    )
