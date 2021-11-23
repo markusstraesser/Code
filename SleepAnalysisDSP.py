@@ -63,7 +63,7 @@ def HR_HRV(hr: list, fs):
     lower = 0
     timer = 0
     hr_vals, hrv_vals, timecodes = [], [], []
-    # through the hr data in 60 second steps with a window of length 70 seconds.
+    # go through the hr data in 60 second steps with a window of length 70 seconds.
     # This means, each window is overlapping the last one by 10 seconds
     for upper in range(int(fs * 70), len(hr), int(fs * 60)):
         try:
