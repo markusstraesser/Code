@@ -55,10 +55,16 @@ def filter_hr(smoothed_v: pd.DataFrame, fs):
 
 
 def HR_HRV(hr: list, fs):
+    """
+    Returns heart rate and rmssd for every minute.
+    A window of 70 seconds worth of signal is moved in 60 second intervals.
+    If heartpy fails to compute valid values, skip one interval.
+    """
     lower = 0
-    # upper = int(fs * 70)
     timer = 0
     hr_vals, hrv_vals, timecodes = [], [], []
+    # through the hr data in 60 second steps with a window of length 70 seconds.
+    # This means, each window is overlapping the last one by 10 seconds
     for upper in range(int(fs * 70), len(hr), int(fs * 60)):
         try:
             _, m = hp.process(
@@ -71,9 +77,10 @@ def HR_HRV(hr: list, fs):
             hrv_vals.append(m["rmssd"])
             timecodes.append(timer)
         except:
+            # if heartpy can't return valid values, skip one 60 second interval
             pass
-        lower = upper - 10
-        # upper += int(fs * 60)
+        # set new lower bound 10 seconds before upper
+        lower = upper - int((fs * 10))
         timer += 1
     return hr_vals, hrv_vals, timecodes
 
@@ -91,46 +98,66 @@ def filter_rr(smoothed_v: pd.DataFrame, fs):
 
 
 def RR_MVT(rr: list, fs):
+    """
+    Returns respiratory rate and movement for every minute.
+    Average distance between peaks in a 1 minute window is calculated for RR,
+    min/max values are calculated for movement magnitude.
+    A window of 70 seconds worth of signal is moved in 60 second intervals.
+    """
     lower = 0
-    upper = int(fs * 70)
     timer = 0
     rr_vals, mvt_vals, timecodes, diffs = [], [], [], []
-    while upper <= len(rr):
+    for upper in range(int(fs * 70), len(rr), int(fs * 60)):
         window = rr[lower:upper]
+        # find peaks with following parameters
         peaks, _ = find_peaks(window, height=0, distance=fs * 2, width=60)
+        # go through the peak values
         for i in range(len(peaks) - 1):
+            # and calculate the distance for every consecutive pair
             diffs.append(peaks[i + 1] - peaks[i])
+        # calculate average bpm and append to rr_vals
         rr_vals.append((70 * fs) / np.mean(diffs))
         diffs.clear()
-        # Ansatz: Differenz Max-Min Wert des Druckwerts für jede
-        # Minute berechnen
+        # Calculate magnitude of movement for every minute
+        # set min/max to the first value of the window
         min_val = window[0]
         max_val = window[0]
+        # go through the window and find min/max values
         for i in window:
             if i < min_val:
                 min_val = i
             if i > max_val:
                 max_val = i
+        # difference between min/max is the movement magnitude
         mvt_vals.append(max_val - min_val)
+        # to later make the threshold setting easier, normalize the data between 0 and 1
         mvt_vals_norm = [float(i) / max(mvt_vals) for i in mvt_vals]
+        # keep track of the minute
         timecodes.append(timer)
-        lower = upper - 10
-        upper += int(fs * 60)
+        # set new bounds for window
+        lower = upper - int((10 * fs))
         timer += 1
     return rr_vals, mvt_vals_norm, timecodes
 
 
 def SleepPhases(heart_rates, rmssd, resp_rates, movement):
-    """ "Movement (e.g. turning in Bed) is used to segment the night"""
+    """Movement (e.g. turning in Bed) is used to segment the night.
+    Sleep phases are determined by comparing the median value of the parameters for
+    a segment to the median value for the whole recording."""
+
     # TODO larger segmentation into sleep cycles of 90-120 minutes for "_avg" values
     # This should enable more accurate classification of sleep phases by
     # creating medians for every sleep cycle, not for the whole night
 
     lower = 0
+    # starting at 5 minutes to ensure a better chance of getting the first
+    # sleep phase right
     upper = 5
+    # threshold determines, when a sleep phase ends. It is assumed, that
+    # movement of large magnitude only occurs, when sleep phases change.
     threshold = 0.2
     sp_vals = []
-    sleep_phase = 0
+    sleep_phase = 4
     # Determine medians as threshold for +/- of sleep paramters
     hr_avg = np.nanmedian(heart_rates)
     rmssd_avg = np.nanmedian(rmssd)
@@ -236,17 +263,23 @@ def plot_dash(
     # plot data
     ax1.plot(raw_timestamps / 60_000_000, raw_data, color="dimgrey")
     ax2.plot(
+        # this only works for fixed sample rate of 85.2 Hz, good enough for now
         np.linspace(0, 2575 / fs_sm, 2575),
-        rrdata_filt[1551000:1553575],
+        # make bounds non static
+        rrdata_filt[int(len(rrdata_filt) / 2) : int(len(rrdata_filt) / 2) + 2575],
         color="goldenrod",
     )
     ax3.plot(
-        np.linspace(0, 2575 / fs_sm, 2575), hrdata_filt[250000:252575], color="seagreen"
+        # this only works for fixed sample rate of 85.2 Hz, good enough for now
+        np.linspace(0, 2575 / fs_sm, 2575),
+        # make bounds non static
+        hrdata_filt[int(len(hrdata_filt) / 2) : int(len(hrdata_filt) / 2) + 2575],
+        color="seagreen",
     )
     ax4.scatter(rr_section_timestamps, rr_sections, color="goldenrod", s=10)
     ax5.scatter(hr_section_timestamps, hr_sections, color="seagreen", s=10)
     ax6.scatter(hr_section_timestamps, hrv_sections, color="teal", s=10)
-    ax7.bar(rr_section_timestamps, mvt_sections, color="darkorange", width=2)
+    ax7.bar(rr_section_timestamps, mvt_sections, color="darkorange", width=1)
     ax8.plot(range(len(sleep_phases)), sleep_phases, color="cornflowerblue")
 
     # set ticks and labels
