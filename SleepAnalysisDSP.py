@@ -107,6 +107,7 @@ def RR_MVT(rr: list, fs):
     lower = 0
     timer = 0
     rr_vals, mvt_vals, timecodes, diffs = [], [], [], []
+    # start at 70 seconds, move in 60 sec intervals
     for upper in range(int(fs * 70), len(rr), int(fs * 60)):
         window = rr[lower:upper]
         # find peaks with following parameters
