@@ -73,6 +73,7 @@ def HR_HRV(hr: list, fs):
                 clean_rr=True,
                 high_precision=True,
             )
+            # write the values to corresponding list
             hr_vals.append(m["bpm"])
             hrv_vals.append(m["rmssd"])
             timecodes.append(timer)
