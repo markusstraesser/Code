@@ -4,6 +4,8 @@ Output parameters are: HeartR, HRV, RespR, MvtR, SleepPhase"""
 from datetime import timedelta
 import numpy as np
 import matplotlib.pyplot as plt
+from numpy.core.function_base import linspace
+from numpy.lib.function_base import append
 import pandas as pd
 from scipy.signal import butter, lfilter
 import heartpy as hp
@@ -79,7 +81,9 @@ def HR_HRV(hr: list, fs):
             timecodes.append(timer)
         except:
             # if heartpy can't return valid values, skip one 60 second interval
-            pass
+            hr_vals.append(np.nan)
+            hrv_vals.append(np.nan)
+            timecodes.append(timer)
         # set new lower bound 10 seconds before upper
         lower = upper - int((fs * 10))
         timer += 1
@@ -146,62 +150,69 @@ def SleepPhases(heart_rates, rmssd, resp_rates, movement):
     """Movement (e.g. turning in Bed) is used to segment the night.
     Sleep phases are determined by comparing the median value of the parameters for
     a segment to the median value for the whole recording."""
-
+    # TODO might have to try just going in 10 minute intervals
     # TODO larger segmentation into sleep cycles of 90-120 minutes for "_avg" values
     # This should enable more accurate classification of sleep phases by
     # creating medians for every sleep cycle, not for the whole night
 
     lower = 0
-    # starting at 5 minutes to ensure a better chance of getting the first
-    # sleep phase right
-    upper = 5
-    # threshold determines, when a sleep phase ends. It is assumed, that
-    # movement of large magnitude only occurs, when sleep phases change.
-    threshold = 0.2
     sp_vals = []
-    sleep_phase = 4
-    # Determine medians as threshold for +/- of sleep paramters
-    hr_avg = np.nanmedian(heart_rates)
-    rmssd_avg = np.nanmedian(rmssd)
-    rr_avg = np.nanmedian(resp_rates)
+    sleep_phase = 0
     length = len(movement)
+    step = 5
+    window_width = 5
+    padding = 30
 
-    # go through the movement dataset
-    while upper < length:
-        # look for next position where movement < threshold
-        if movement[upper] > threshold:
-            while upper < length and movement[upper] > threshold:
-                upper += 1
-        # find next threshold crossing
-        while upper < length and movement[upper] < threshold:
-            upper += 1
-        # calculate median for segment
-        hr_avg_segment = np.nanmedian(heart_rates[lower:upper])
-        rmssd_avg_segment = np.nanmedian(rmssd[lower:upper])
-        rr_avg_segment = np.nanmedian(resp_rates[lower:upper])
-
-        # determine sleep phase
-        # TODO determine wake phases
-        if (
-            hr_avg_segment > hr_avg
-            and rmssd_avg_segment > rmssd_avg
-            and rr_avg_segment > rr_avg
-        ):
-            sleep_phase = 3  # REM
-        elif (
-            hr_avg_segment < hr_avg
-            and rmssd_avg_segment < rmssd_avg
-            and rr_avg_segment < rr_avg
-        ):
-            sleep_phase = 1  # DEEP
+    # go through the movement data using a window
+    for upper in range(window_width, length, step):
+        # check if end is reached, calculate the last segment as awake
+        if (length - upper) < step:
+            upper = length
+            lower = upper - window_width
+            sp_vals.extend([4] * (upper - lower))
         else:
-            sleep_phase = 2  # LIGHT
-        # set the sleep phase for current segment
-        sp_vals.extend([sleep_phase] * (upper - lower))
-        # set new bounds
-        lower = upper
-        # increment upper by at least 1
-        upper += 1
+            lower = upper - window_width
+            # set medians for the window, adjust importance of movement
+            hr_avg_segment = np.nanmedian(heart_rates[lower:upper])
+            rmssd_avg_segment = np.nanmedian(rmssd[lower:upper])
+            rr_avg_segment = np.nanmedian(resp_rates[lower:upper])
+            mvt_avg_segment = np.nanmedian(movement[lower:upper]) * 0.8
+
+            # calculate median of surrounding minutes as threshold for +/- of sleep paramters
+            # check if out of bounds
+            lo = max(lower - padding, 0)
+            hi = min(upper + padding, length)
+            hr_avg = np.nanmedian(heart_rates[lo:hi])
+            rmssd_avg = np.nanmedian(rmssd[lo:hi])
+            rr_avg = np.nanmedian(resp_rates[lo:hi])
+            mvt_avg = np.nanmedian(movement[lo:hi])
+            # determine sleep phase
+            # TODO determine wake phases
+            if (
+                hr_avg_segment > hr_avg
+                and mvt_avg_segment < mvt_avg
+                and rr_avg_segment > rr_avg
+                and rmssd_avg_segment > rmssd_avg
+            ):
+                sleep_phase = 3  # REM
+            elif (
+                hr_avg_segment < hr_avg
+                and mvt_avg_segment < mvt_avg
+                and rr_avg_segment < rr_avg
+                and rmssd_avg_segment < rmssd_avg
+            ):
+                sleep_phase = 1  # DEEP
+            elif (
+                hr_avg_segment > hr_avg
+                and mvt_avg_segment > mvt_avg
+                and rr_avg_segment > rr_avg
+            ):
+                sleep_phase = 4  # Awake
+            else:
+                sleep_phase = 2  # LIGHT
+            # set the sleep phase for current segment
+            sp_vals.extend([sleep_phase] * (step))
+            # set new bounds
 
     # stats for sleep duration/quality
     # TODO write summary of sleep stats
@@ -222,7 +233,7 @@ def plot_dash(
     raw_timestamps,
     hr_section_timestamps,
     rr_section_timestamps,
-    sleep_phases,
+    sleep_phases: list,
     # sleep_measures,
 ):
     """Creates Plots for:
@@ -262,27 +273,39 @@ def plot_dash(
     ax7.set_title("Average Movement per Minute")
     ax8.set_title("Sleep Phases")
 
+    # set colors for sleep phases
+    cc = []
+    for val in sleep_phases:
+        if val == 1:
+            cc.append("royalblue")
+        elif val == 2:
+            cc.append("skyblue")
+        elif val == 3:
+            cc.append("powderblue")
+        else:
+            cc.append("lightgrey")
+
     # plot data
     ax1.plot(raw_timestamps / 60_000_000, raw_data, color="dimgrey")
     ax2.plot(
         # this only works for fixed sample rate of 85.2 Hz, good enough for now
         np.linspace(0, 2575 / fs_sm, 2575),
-        # make bounds non static
-        rrdata_filt[int(len(rrdata_filt) / 2) : int(len(rrdata_filt) / 2) + 2575],
-        color="goldenrod",
+        # TODO make bounds non static
+        rrdata_filt[int(len(rrdata_filt) * 0.3) : int(len(rrdata_filt) * 0.3) + 2575],
+        color="orange",
     )
     ax3.plot(
         # this only works for fixed sample rate of 85.2 Hz, good enough for now
         np.linspace(0, 2575 / fs_sm, 2575),
-        # make bounds non static
-        hrdata_filt[int(len(hrdata_filt) / 2) : int(len(hrdata_filt) / 2) + 2575],
+        # TODO make bounds non static
+        hrdata_filt[int(len(hrdata_filt) * 0.3) : int(len(hrdata_filt) * 0.3) + 2575],
         color="seagreen",
     )
-    ax4.scatter(rr_section_timestamps, rr_sections, color="goldenrod", s=10)
+    ax4.scatter(rr_section_timestamps, rr_sections, color="orange", s=10)
     ax5.scatter(hr_section_timestamps, hr_sections, color="seagreen", s=10)
     ax6.scatter(hr_section_timestamps, hrv_sections, color="teal", s=10)
     ax7.bar(rr_section_timestamps, mvt_sections, color="darkorange", width=1)
-    ax8.plot(range(len(sleep_phases)), sleep_phases, color="cornflowerblue")
+    ax8.bar(np.arange(len(sleep_phases)), sleep_phases, color=cc, width=1)
 
     # set ticks and labels
     ax1.set_xticks(np.arange(0, max(raw_timestamps) / 60_000_000, 30))
@@ -317,7 +340,7 @@ if __name__ == "__main__":
     FILE = "Sensordata\RawData15102021.csv"
     data = pd.read_csv(FILE, names=["timestamp", "value"], delimiter=",")
 
-    # calculate smoothed dataset and backfill
+    # calculate smoothed dataset and backfill missing data from phaseshift
     data["smoothed_ts"] = data["timestamp"].rolling(5, win_type="hanning").mean()
     data["smoothed_v"] = data["value"].rolling(5, win_type="hanning").mean()
     data["smoothed_ts"] = data["smoothed_ts"].bfill()
