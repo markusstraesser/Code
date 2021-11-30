@@ -4,13 +4,12 @@ Output parameters are: HeartR, HRV, RespR, MvtR, SleepPhase"""
 from datetime import timedelta
 import numpy as np
 import matplotlib.pyplot as plt
-from numpy.core.function_base import linspace
-from numpy.lib.function_base import append
 import pandas as pd
 from scipy.signal import butter, lfilter
 import heartpy as hp
 from scipy.signal import resample, find_peaks
 import matplotlib.gridspec as gridspec
+import warnings
 
 
 def getSamplingFreq(timestamp):
@@ -42,6 +41,13 @@ def butter_bandpass_filter(data, lowcut, highcut, fs, order):
     b, a = butter_bandpass(lowcut, highcut, fs, order=order)
     y = lfilter(b, a, data)
     return y
+
+
+def reject_outliers(data, m=2.0):
+    d = np.abs(data - np.median(data))
+    mdev = np.median(d)
+    s = d / mdev if mdev else 0.0
+    return np.where(s > m, np.nan, data)
 
 
 def filter_hr(smoothed_v: pd.DataFrame, fs):
@@ -76,10 +82,10 @@ def HR_HRV(hr: list, fs):
                 high_precision=True,
             )
             # write the values to corresponding list
-            hr_vals.append(m["bpm"])
-            hrv_vals.append(m["rmssd"])
+            hr_vals.append(np.round(m["bpm"], 0))
+            hrv_vals.append(np.round(m["rmssd"], 0))
             timecodes.append(timer)
-        except:
+        except Exception:
             # if heartpy can't return valid values, skip one 60 second interval
             hr_vals.append(np.nan)
             hrv_vals.append(np.nan)
@@ -116,13 +122,18 @@ def RR_MVT(rr: list, fs):
     for upper in range(int(fs * 70), len(rr), int(fs * 60)):
         window = rr[lower:upper]
         # find peaks with following parameters
-        peaks, _ = find_peaks(window, height=0, distance=fs * 2, width=60)
+        peaks, _ = find_peaks(
+            window,
+            height=np.median(window),
+            distance=int(fs * 2),
+            width=60,
+        )
         # go through the peak values
         for i in range(len(peaks) - 1):
             # and calculate the distance for every consecutive pair
-            diffs.append(peaks[i + 1] - peaks[i])
+            diffs.append(int(peaks[i + 1] - peaks[i]))
         # calculate average bpm and append to rr_vals
-        rr_vals.append((70 * fs) / np.mean(diffs))
+        rr_vals.append(np.round((70 * fs) / np.median(diffs), 1))
         diffs.clear()
         # Calculate magnitude of movement for every minute
         # set min/max to the first value of the window
@@ -136,8 +147,8 @@ def RR_MVT(rr: list, fs):
                 max_val = i
         # difference between min/max is the movement magnitude
         mvt_vals.append(max_val - min_val)
-        # to later make the threshold setting easier, normalize the data between 0 and 1
-        mvt_vals_norm = [float(i) / max(mvt_vals) for i in mvt_vals]
+        # to later make the threshold setting easier, normalize the data
+        mvt_vals_norm = [int(i * 100 / max(mvt_vals)) for i in mvt_vals]
         # keep track of the minute
         timecodes.append(timer)
         # set new bounds for window
@@ -147,78 +158,95 @@ def RR_MVT(rr: list, fs):
 
 
 def SleepPhases(heart_rates, rmssd, resp_rates, movement):
-    """Movement (e.g. turning in Bed) is used to segment the night.
-    Sleep phases are determined by comparing the median value of the parameters for
-    a segment to the median value for the whole recording."""
-    # TODO might have to try just going in 10 minute intervals
-    # TODO larger segmentation into sleep cycles of 90-120 minutes for "_avg" values
-    # This should enable more accurate classification of sleep phases by
-    # creating medians for every sleep cycle, not for the whole night
+    """Sleep phases are determined by classifying vital parameters into +/-.
+
+    Median values of a smaller and a larger surrounding window are compared and
+    moved through the data.
+
+    Essentially, the parameter curves are lowpass filtered and combined to yield
+    the sleep phases.
+
+    ,,,,,,,,,,,,,->|....padding....|---segment---|....padding....|->,,,,,,,,,,
+
+    Inputs:
+    - Heart Rates every Minute, Array-like
+    - RMSSD (Heart Rate Variability), Array-like
+    - Respiratory Rates, Array-like
+    - Movement Rates, Array-like
+
+    Outputs:
+    - Sleep Phases, Array-like
+    - Sleep Stats, Dictionary"""
 
     lower = 0
     sp_vals = []
     sleep_phase = 0
     length = len(movement)
-    step = 5
-    window_width = 5
-    padding = 30
+    step = 1
+    window_width = 30
+    padding = 75
 
     # go through the movement data using a window
     for upper in range(window_width, length, step):
         # check if end is reached, calculate the last segment as awake
-        if (length - upper) < step:
+        if (length - upper) <= step:
             upper = length
             lower = upper - window_width
-            sp_vals.extend([4] * (upper - lower))
+            sp_vals.extend([2] * (upper - lower))
         else:
             lower = upper - window_width
-            # set medians for the window, adjust importance of movement
-            hr_avg_segment = np.nanmedian(heart_rates[lower:upper])
-            rmssd_avg_segment = np.nanmedian(rmssd[lower:upper])
+            # set medians for the window
+            hr_avg_segment = int(np.nanmedian(heart_rates[lower:upper]))
+            # rmssd_avg_segment = int(np.nanmedian(rmssd[lower:upper]))
             rr_avg_segment = np.nanmedian(resp_rates[lower:upper])
-            mvt_avg_segment = np.nanmedian(movement[lower:upper]) * 0.8
-
+            mvt_avg_segment = int(np.nanmedian(movement[lower:upper]))
             # calculate median of surrounding minutes as threshold for +/- of sleep paramters
-            # check if out of bounds
+            # check if out of bounds and adjust accordingly
             lo = max(lower - padding, 0)
             hi = min(upper + padding, length)
-            hr_avg = np.nanmedian(heart_rates[lo:hi])
-            rmssd_avg = np.nanmedian(rmssd[lo:hi])
+            hr_avg = int(np.nanmedian(heart_rates[lo:hi]))
+            # rmssd_avg = int(np.nanmedian(rmssd[lo:hi]))
             rr_avg = np.nanmedian(resp_rates[lo:hi])
-            mvt_avg = np.nanmedian(movement[lo:hi])
+            mvt_avg = int(np.nanmean(movement[lo:hi]))
             # determine sleep phase
-            # TODO determine wake phases
             if (
-                hr_avg_segment > hr_avg
+                hr_avg_segment >= hr_avg
                 and mvt_avg_segment < mvt_avg
                 and rr_avg_segment > rr_avg
-                and rmssd_avg_segment > rmssd_avg
+                # and rmssd_avg_segment > rmssd_avg
             ):
                 sleep_phase = 3  # REM
             elif (
                 hr_avg_segment < hr_avg
                 and mvt_avg_segment < mvt_avg
                 and rr_avg_segment < rr_avg
-                and rmssd_avg_segment < rmssd_avg
+                # and rmssd_avg_segment < rmssd_avg
             ):
                 sleep_phase = 1  # DEEP
             elif (
-                hr_avg_segment > hr_avg
+                hr_avg_segment >= hr_avg
                 and mvt_avg_segment > mvt_avg
-                and rr_avg_segment > rr_avg
+                and rr_avg_segment >= rr_avg
             ):
                 sleep_phase = 4  # Awake
             else:
                 sleep_phase = 2  # LIGHT
             # set the sleep phase for current segment
             sp_vals.extend([sleep_phase] * (step))
-            # set new bounds
 
     # stats for sleep duration/quality
-    # TODO write summary of sleep stats
-    measures = dict
+    # TODO write sleep stats
 
-    return sp_vals, measures
+    stats = {}
+    stats["Duration"] = "{:02d}:{:02d}".format(*divmod(len(sp_vals), 60)) + " h"
+    stats["Deep"] = "{:02d}:{:02d}".format(*divmod(sp_vals.count(1), 60)) + " h"
+    stats["Light"] = "{:02d}:{:02d}".format(*divmod(sp_vals.count(2), 60)) + " h"
+    stats["REM"] = "{:02d}:{:02d}".format(*divmod(sp_vals.count(3), 60)) + " h"
+    stats["Interruptions"] = str(0)
+    stats["Average HR"] = str(int(np.nanmedian(heart_rates))) + " bpm"
+    stats["Average RR"] = str(int(np.nanmedian(resp_rates))) + " bpm"
+
+    return sp_vals, stats
 
 
 # all the plotting stuff
@@ -234,7 +262,7 @@ def plot_dash(
     hr_section_timestamps,
     rr_section_timestamps,
     sleep_phases: list,
-    # sleep_measures,
+    sleep_stats: dict,
 ):
     """Creates Plots for:
     - Complete Raw Dataset
@@ -242,14 +270,9 @@ def plot_dash(
     - Heartrate, HR-Variability, Respiratory Rate and Movement in 1 Minute Sections
     - Sleep Phases"""
 
-    plt.style.use("bmh")
     fig = plt.figure(tight_layout=True)
-    fig.set_size_inches(18, 8)
-    figmgr = plt.get_current_fig_manager()
-    figmgr.window.showMaximized()
-    fig.suptitle(
-        f"Sleep Analysis using BCG (Total Recorded Time: {tot_duration})", fontsize=16
-    )
+    fig.set_size_inches(17, 8)
+    fig.suptitle(f"Sleep Analysis using BCG", fontsize=16)
 
     # create layout
     gs = gridspec.GridSpec(nrows=6, ncols=4)
@@ -277,11 +300,11 @@ def plot_dash(
     cc = []
     for val in sleep_phases:
         if val == 1:
-            cc.append("royalblue")
+            cc.append("#014f86")
         elif val == 2:
-            cc.append("skyblue")
+            cc.append("#61a5c2")
         elif val == 3:
-            cc.append("powderblue")
+            cc.append("#a9d6e5")
         else:
             cc.append("lightgrey")
 
@@ -291,29 +314,36 @@ def plot_dash(
         # this only works for fixed sample rate of 85.2 Hz, good enough for now
         np.linspace(0, 2575 / fs_sm, 2575),
         # TODO make bounds non static
-        rrdata_filt[int(len(rrdata_filt) * 0.3) : int(len(rrdata_filt) * 0.3) + 2575],
-        color="orange",
+        rrdata_filt[int(len(rrdata_filt) * 0.4) : int(len(rrdata_filt) * 0.4) + 2575],
+        color="#008000",
     )
     ax3.plot(
         # this only works for fixed sample rate of 85.2 Hz, good enough for now
         np.linspace(0, 2575 / fs_sm, 2575),
         # TODO make bounds non static
-        hrdata_filt[int(len(hrdata_filt) * 0.3) : int(len(hrdata_filt) * 0.3) + 2575],
-        color="seagreen",
+        hrdata_filt[int(len(hrdata_filt) * 0.4) : int(len(hrdata_filt) * 0.4) + 2575],
+        color="#E1701A",
     )
-    ax4.scatter(rr_section_timestamps, rr_sections, color="orange", s=10)
-    ax5.scatter(hr_section_timestamps, hr_sections, color="seagreen", s=10)
-    ax6.scatter(hr_section_timestamps, hrv_sections, color="teal", s=10)
-    ax7.bar(rr_section_timestamps, mvt_sections, color="darkorange", width=1)
+    ax4.bar(rr_section_timestamps, rr_sections, color="#C7E4BD", width=1)
+    ax4.plot(rr_section_timestamps, rr_sections, color="#008000")
+    ax5.bar(hr_section_timestamps, hr_sections, color="#FFCFAA", width=1)
+    ax5.plot(hr_section_timestamps, hr_sections, color="#E1701A")
+    ax6.bar(hr_section_timestamps, hrv_sections, color="#F8C8BE", width=1)
+    ax6.plot(hr_section_timestamps, hrv_sections, color="#F05C3C")
+    ax7.bar(rr_section_timestamps, mvt_sections, color="#E7C9FC", width=1)
+    ax7.plot(rr_section_timestamps, mvt_sections, color="#9551C4")
     ax8.bar(np.arange(len(sleep_phases)), sleep_phases, color=cc, width=1)
 
     # set ticks and labels
-    ax1.set_xticks(np.arange(0, max(raw_timestamps) / 60_000_000, 30))
-    ax8.set_xticks(np.arange(0, len(sleep_phases), 30))
+    # ax1.set_xticks(np.arange(0, raw_timestamps[-1] / 60_000_000))
+    # ax8.set_xticks(np.arange(0, len(sleep_phases)))
     ax8.set_yticks([1.0, 2.0, 3.0, 4.0])
     ax1.ticklabel_format(style="sci", axis="y", scilimits=(6, 6), useMathText=True)
     ax2.ticklabel_format(style="sci", axis="y", scilimits=(3, 3), useMathText=True)
     ax3.ticklabel_format(style="sci", axis="y", scilimits=(3, 3), useMathText=True)
+    ax4.set_ylim(bottom=0)
+    ax5.set_ylim(bottom=0)
+    ax6.set_ylim(bottom=0)
     ax1.set_xlabel("Time [Minutes]")
     ax2.set_xlabel("Time [Seconds]")
     ax3.set_xlabel("Time [Seconds]")
@@ -328,8 +358,23 @@ def plot_dash(
     ax4.set_ylabel("Respiratory Rate [bpm]")
     ax5.set_ylabel("Heart Rate [bpm]")
     ax6.set_ylabel("RMSSD [ms]")
-    ax7.set_ylabel("Relative Magnitude")
+    ax7.set_ylabel("Relative Magnitude [%]")
     ax8.set_yticklabels(["Deep", "Light", "REM", "Awake"])
+
+    # Create Textbox for sleep Stats
+    props = dict(boxstyle="round", facecolor="lightgrey")
+    stats_str = ", ".join("{}: {}".format(k, v) for k, v in sleep_stats.items())
+    # place a text box in upper left in axes coords
+    ax8.text(
+        0.5,
+        -0.4,
+        stats_str,
+        transform=ax8.transAxes,
+        fontsize=14,
+        verticalalignment="top",
+        horizontalalignment="center",
+        bbox=props,
+    )
 
     plt.show()
 
@@ -337,8 +382,10 @@ def plot_dash(
 if __name__ == "__main__":
 
     # read the csv file into a pandas dataframe
-    FILE = "Sensordata\RawData15102021.csv"
+    print("Reading Data from File...")
+    FILE = "Sensordata\RawData30112021.csv"
     data = pd.read_csv(FILE, names=["timestamp", "value"], delimiter=",")
+    print("Complete!")
 
     # calculate smoothed dataset and backfill missing data from phaseshift
     data["smoothed_ts"] = data["timestamp"].rolling(5, win_type="hanning").mean()
@@ -346,12 +393,9 @@ if __name__ == "__main__":
     data["smoothed_ts"] = data["smoothed_ts"].bfill()
     data["smoothed_v"] = data["smoothed_v"].bfill()
     fs_sm = getSamplingFreq(data["smoothed_ts"].to_numpy())
-    print(f"Sampling Frequency: {fs_sm:.3f}")
-
-    # calculate duration of recorded data
-    tot_duration = getDuration(data["smoothed_ts"].to_list())
 
     # filter (and upsample for HR) the smoothed datasets
+    print("Filtering Signal...")
     filter_hr(data["smoothed_v"], fs_sm)
     hr_filt = data["filtered_hr"].to_list()
     resampled_hr_filt = resample(hr_filt, len(hr_filt) * 4)
@@ -360,27 +404,55 @@ if __name__ == "__main__":
     print("Filtering done!")
 
     # Calculate Heartrates, Respiratory Rates, HRV and Movement
-    heart_rates, hrv, hr_timecodes = HR_HRV(resampled_hr_filt, (fs_sm * 4))
-    print("HR, Hrv done!")
+    print("Calculating Heart Rates + Heartrate Variability...")
+    # ignore warnings thrown by heartpy
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        heart_rates, hrv, hr_timecodes = HR_HRV(resampled_hr_filt, (fs_sm * 4))
+    # remove outliers > +-5 sigma, converts to np.array
+    heart_rates = reject_outliers(heart_rates, m=5)
+    # interpolate to fill gaps, https://stackoverflow.com/a/6520696
+    nans_hr, x_hr = np.isnan(heart_rates), lambda z: z.nonzero()[0]
+    heart_rates[nans_hr] = np.round(
+        np.interp(x_hr(nans_hr), x_hr(~nans_hr), heart_rates[~nans_hr]), 0
+    )
+    # needs to be np array
+    hrv = np.array(hrv)
+    nans_hrv, x_hrv = np.isnan(hrv), lambda z: z.nonzero()[0]
+    hrv[nans_hrv] = np.round(
+        np.interp(x_hrv(nans_hrv), x_hrv(~nans_hrv), hrv[~nans_hrv]), 0
+    )
+    print("Heartrates + Heartrate Variability done!")
+    print("Calculating Respiration Rates + Movement...")
     resp_rates, movement, rr_timecodes = RR_MVT(rr_filt, fs_sm)
-    print("Resp + Mvt done!")
+    # remove outliers > +-5 sigma, converts to np.array
+    resp_rates = reject_outliers(resp_rates, m=5)
+    # interpolate to fill gaps, https://stackoverflow.com/a/6520696
+    nans_rr, x_rr = np.isnan(resp_rates), lambda z: z.nonzero()[0]
+    resp_rates[nans_rr] = np.round(
+        np.interp(x_rr(nans_rr), x_rr(~nans_rr), resp_rates[~nans_rr]), 0
+    )
+    print("Respiratory Rates + Movement done!")
 
     # Determine Sleep Phases
-    sp_segments, _ = SleepPhases(heart_rates, hrv, resp_rates, movement)
-    print("Sleep Phases done!")
+    print("Sleep Analysis...")
+    sp_segments, sp_stats = SleepPhases(heart_rates, hrv, resp_rates, movement)
+    print("Sleep Analysis done!")
+    print(sp_stats)
 
     # Plot everything
+    print("Plotting...")
     plot_dash(
-        data["smoothed_v"],
+        data["smoothed_v"].to_numpy(),
         hr_filt,
         rr_filt,
         heart_rates,
         hrv,
         resp_rates,
         movement,
-        data["smoothed_ts"],
+        data["smoothed_ts"].to_numpy(),
         hr_timecodes,
         rr_timecodes,
         sp_segments,
-        # sp_measures,
+        sp_stats,
     )
