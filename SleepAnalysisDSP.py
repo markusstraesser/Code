@@ -1,8 +1,10 @@
 """Reads Raw Sensor Data from CSV and performs a Sleep Analysis.
-Output parameters are: HeartR, HRV, RespR, MvtR, SleepPhase"""
+Output parameters are: List of HeartR, HRV, RespR, MvtR, SleepPhase,
+SleepPhase durations, avg. HR, RR"""
 
 from datetime import timedelta
 import numpy as np
+from matplotlib.patches import FancyBboxPatch
 import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.signal import butter, lfilter
@@ -12,7 +14,7 @@ import matplotlib.gridspec as gridspec
 import warnings
 
 
-def getSamplingFreq(timestamp):
+def get_sampling_freq(timestamp):
     """calculates sampling frequency for a given set of microsecond timestamps"""
     t_start = timestamp[0]  # ts of first sample
     t_stop = timestamp[-1]  # ts of last sample
@@ -22,7 +24,7 @@ def getSamplingFreq(timestamp):
     return fs
 
 
-def getDuration(timestamp):
+def get_duration(timestamp):
     t_start = timestamp[0]  # ts of first sample
     t_stop = timestamp[-1]  # ts of last sample
     delta_t = int((t_stop - t_start) / 1_000_000)  # time difference in seconds
@@ -50,6 +52,43 @@ def reject_outliers(data, m=2.0):
     return np.where(s > m, np.nan, data)
 
 
+def group_list(raw_list: list):
+    # TODO if last element has width of 1, it is ignored. Some mistake in the logic...
+
+    """Returns
+    - list of unique values in order of appearance
+    - list with the number of consecutive occurences
+    - positions of chunks (x coordinate of middle)
+
+    Example:
+    [2, 2, 2, 1, 3, 3, 4, 4, 4, 4, 2, 2, 2, 3, 3, 1, 1, 1, 1, 1, 2, 2]
+
+    ->
+    [2, 1, 3, 4, 2, 3, 1, 2] [3, 1, 2, 4, 3, 2, 5, 2] [1.5, 3.5, 5.0, 8.0, 11.5,
+    14.0, 17.5, 21.0]"""
+
+    grouped_vals = []
+    val_count = []
+    count = 1
+    x_pos = []
+    for i in range(0, len(raw_list) - 1):
+        current = raw_list[i]
+        next_element = raw_list[i + 1]
+        if i == len(raw_list) - 2:
+            count += 1
+            grouped_vals.append(current)
+            val_count.append(count)
+            x_pos.append(i + 1 - (count / 2) + 1)
+        elif current != next_element:
+            grouped_vals.append(current)
+            val_count.append(count)
+            x_pos.append(i - (count / 2) + 1)
+            count = 1
+        else:
+            count += 1
+    return grouped_vals, val_count, x_pos
+
+
 def filter_hr(smoothed_v: pd.DataFrame, fs):
     lowcut = 0.66
     highcut = 2.33
@@ -62,7 +101,7 @@ def filter_hr(smoothed_v: pd.DataFrame, fs):
     )
 
 
-def HR_HRV(hr: list, fs):
+def hr_hrv(hr, fs):
     """
     Returns heart rate and rmssd for every minute.
     A window of 70 seconds worth of signal is moved in 60 second intervals.
@@ -108,7 +147,7 @@ def filter_rr(smoothed_v: pd.DataFrame, fs):
     )
 
 
-def RR_MVT(rr: list, fs):
+def rr_mvt(rr, fs):
     """
     Returns respiratory rate and movement for every minute.
     Average distance between peaks in a 1 minute window is calculated for RR,
@@ -147,7 +186,7 @@ def RR_MVT(rr: list, fs):
                 max_val = i
         # difference between min/max is the movement magnitude
         mvt_vals.append(max_val - min_val)
-        # to later make the threshold setting easier, normalize the data
+        # normalize the data in range 100 for %
         mvt_vals_norm = [int(i * 100 / max(mvt_vals)) for i in mvt_vals]
         # keep track of the minute
         timecodes.append(timer)
@@ -157,7 +196,7 @@ def RR_MVT(rr: list, fs):
     return rr_vals, mvt_vals_norm, timecodes
 
 
-def SleepPhases(heart_rates, rmssd, resp_rates, movement):
+def sleep_phases(heart_rates, rmssd, resp_rates, movement):
     """Sleep phases are determined by classifying vital parameters into +/-.
 
     Median values of a smaller and a larger surrounding window are compared and
@@ -183,8 +222,8 @@ def SleepPhases(heart_rates, rmssd, resp_rates, movement):
     sleep_phase = 0
     length = len(movement)
     step = 1
-    window_width = 30
-    padding = 75
+    window_width = 20
+    padding = 35
 
     # go through the movement data using a window
     for upper in range(window_width, length, step):
@@ -224,7 +263,7 @@ def SleepPhases(heart_rates, rmssd, resp_rates, movement):
             ):
                 sleep_phase = 1  # DEEP
             elif (
-                hr_avg_segment >= hr_avg
+                hr_avg_segment > hr_avg
                 and mvt_avg_segment > mvt_avg
                 and rr_avg_segment >= rr_avg
             ):
@@ -235,7 +274,7 @@ def SleepPhases(heart_rates, rmssd, resp_rates, movement):
             sp_vals.extend([sleep_phase] * (step))
 
     # stats for sleep duration/quality
-    # TODO write sleep stats
+    # TODO write sleep stats for interruptions
 
     stats = {}
     stats["Duration"] = "{:02d}:{:02d}".format(*divmod(len(sp_vals), 60)) + " h"
@@ -244,7 +283,7 @@ def SleepPhases(heart_rates, rmssd, resp_rates, movement):
     stats["REM"] = "{:02d}:{:02d}".format(*divmod(sp_vals.count(3), 60)) + " h"
     stats["Interruptions"] = str(0)
     stats["Average HR"] = str(int(np.nanmedian(heart_rates))) + " bpm"
-    stats["Average RR"] = str(int(np.nanmedian(resp_rates))) + " bpm"
+    stats["Average RR"] = str((np.nanmedian(resp_rates))) + " bpm"
 
     return sp_vals, stats
 
@@ -271,7 +310,7 @@ def plot_dash(
     - Sleep Phases"""
 
     fig = plt.figure(tight_layout=True)
-    fig.set_size_inches(17, 8)
+    fig.set_size_inches(16, 9)
     fig.suptitle(f"Sleep Analysis using BCG", fontsize=16)
 
     # create layout
@@ -287,7 +326,7 @@ def plot_dash(
     ax8 = fig.add_subplot(gs[-2:, :])
 
     # set titles
-    ax1.set_title("Raw Sensor Data")
+    ax1.set_title(f"Raw Sensor Data, Sampling Frequency: {fs_sm:.2f} Hz")
     ax2.set_title("Section of Filtered Respiratory Signal")
     ax3.set_title("Section of Filtered Heartrate Signal")
     ax4.set_title("Average Respiratory Rate per Minute")
@@ -296,9 +335,13 @@ def plot_dash(
     ax7.set_title("Average Movement per Minute")
     ax8.set_title("Sleep Phases")
 
+    # transform sleep phases to sequence of phases with corresponding length
+    # for better Plot quality
+    sp_sequence, sp_lengths, tick_x_pos = group_list(sleep_phases)
+
     # set colors for sleep phases
     cc = []
-    for val in sleep_phases:
+    for val in sp_sequence:
         if val == 1:
             cc.append("#014f86")
         elif val == 2:
@@ -322,22 +365,22 @@ def plot_dash(
         np.linspace(0, 2575 / fs_sm, 2575),
         # TODO make bounds non static
         hrdata_filt[int(len(hrdata_filt) * 0.4) : int(len(hrdata_filt) * 0.4) + 2575],
-        color="#E1701A",
+        color="#F05C3C",
     )
     ax4.bar(rr_section_timestamps, rr_sections, color="#C7E4BD", width=1)
     ax4.plot(rr_section_timestamps, rr_sections, color="#008000")
-    ax5.bar(hr_section_timestamps, hr_sections, color="#FFCFAA", width=1)
-    ax5.plot(hr_section_timestamps, hr_sections, color="#E1701A")
-    ax6.bar(hr_section_timestamps, hrv_sections, color="#F8C8BE", width=1)
-    ax6.plot(hr_section_timestamps, hrv_sections, color="#F05C3C")
+    ax5.bar(hr_section_timestamps, hr_sections, color="#F8C8BE", width=1)
+    ax5.plot(hr_section_timestamps, hr_sections, color="#F05C3C")
+    ax6.bar(hr_section_timestamps, hrv_sections, color="#FFCFAA", width=1)
+    ax6.plot(hr_section_timestamps, hrv_sections, color="#E1701A")
     ax7.bar(rr_section_timestamps, mvt_sections, color="#E7C9FC", width=1)
     ax7.plot(rr_section_timestamps, mvt_sections, color="#9551C4")
-    ax8.bar(np.arange(len(sleep_phases)), sleep_phases, color=cc, width=1)
+    ax8.bar(tick_x_pos, sp_sequence, color=cc, width=sp_lengths)
 
     # set ticks and labels
     # ax1.set_xticks(np.arange(0, raw_timestamps[-1] / 60_000_000))
     # ax8.set_xticks(np.arange(0, len(sleep_phases)))
-    ax8.set_yticks([1.0, 2.0, 3.0, 4.0])
+    ax8.set_yticks([1.0, 2.0, 3.0, 4.0], ("Deep", "Light", "REM", "Awake"))
     ax1.ticklabel_format(style="sci", axis="y", scilimits=(6, 6), useMathText=True)
     ax2.ticklabel_format(style="sci", axis="y", scilimits=(3, 3), useMathText=True)
     ax3.ticklabel_format(style="sci", axis="y", scilimits=(3, 3), useMathText=True)
@@ -359,7 +402,6 @@ def plot_dash(
     ax5.set_ylabel("Heart Rate [bpm]")
     ax6.set_ylabel("RMSSD [ms]")
     ax7.set_ylabel("Relative Magnitude [%]")
-    ax8.set_yticklabels(["Deep", "Light", "REM", "Awake"])
 
     # Create Textbox for sleep Stats
     props = dict(boxstyle="round", facecolor="lightgrey")
@@ -375,7 +417,8 @@ def plot_dash(
         horizontalalignment="center",
         bbox=props,
     )
-
+    # today = str(datetime.date.today())
+    # plt.savefig(f"Plot_{today}.svg", format="svg")
     plt.show()
 
 
@@ -383,7 +426,7 @@ if __name__ == "__main__":
 
     # read the csv file into a pandas dataframe
     print("Reading Data from File...")
-    FILE = "Sensordata\RawData30112021.csv"
+    FILE = "Sensordata\RawData02122021.csv"
     data = pd.read_csv(FILE, names=["timestamp", "value"], delimiter=",")
     print("Complete!")
 
@@ -392,23 +435,23 @@ if __name__ == "__main__":
     data["smoothed_v"] = data["value"].rolling(5, win_type="hanning").mean()
     data["smoothed_ts"] = data["smoothed_ts"].bfill()
     data["smoothed_v"] = data["smoothed_v"].bfill()
-    fs_sm = getSamplingFreq(data["smoothed_ts"].to_numpy())
+    fs_sm = get_sampling_freq(data["smoothed_ts"].to_numpy())
 
     # filter (and upsample for HR) the smoothed datasets
     print("Filtering Signal...")
     filter_hr(data["smoothed_v"], fs_sm)
-    hr_filt = data["filtered_hr"].to_list()
+    hr_filt = data["filtered_hr"].to_numpy()
     resampled_hr_filt = resample(hr_filt, len(hr_filt) * 4)
     filter_rr(data["smoothed_v"], fs_sm)
-    rr_filt = data["filtered_rr"].to_list()
+    rr_filt = data["filtered_rr"].to_numpy()
     print("Filtering done!")
 
     # Calculate Heartrates, Respiratory Rates, HRV and Movement
     print("Calculating Heart Rates + Heartrate Variability...")
-    # ignore warnings thrown by heartpy
+    # ignore warnings raised by heartpy
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        heart_rates, hrv, hr_timecodes = HR_HRV(resampled_hr_filt, (fs_sm * 4))
+        heart_rates, hrv, hr_timecodes = hr_hrv(resampled_hr_filt, (fs_sm * 4))
     # remove outliers > +-5 sigma, converts to np.array
     heart_rates = reject_outliers(heart_rates, m=5)
     # interpolate to fill gaps, https://stackoverflow.com/a/6520696
@@ -423,8 +466,8 @@ if __name__ == "__main__":
         np.interp(x_hrv(nans_hrv), x_hrv(~nans_hrv), hrv[~nans_hrv]), 0
     )
     print("Heartrates + Heartrate Variability done!")
-    print("Calculating Respiration Rates + Movement...")
-    resp_rates, movement, rr_timecodes = RR_MVT(rr_filt, fs_sm)
+    print("Calculating Respiratory Rates + Movement...")
+    resp_rates, movement, rr_timecodes = rr_mvt(rr_filt, fs_sm)
     # remove outliers > +-5 sigma, converts to np.array
     resp_rates = reject_outliers(resp_rates, m=5)
     # interpolate to fill gaps, https://stackoverflow.com/a/6520696
@@ -436,11 +479,11 @@ if __name__ == "__main__":
 
     # Determine Sleep Phases
     print("Sleep Analysis...")
-    sp_segments, sp_stats = SleepPhases(heart_rates, hrv, resp_rates, movement)
+    sp_segments, sp_stats = sleep_phases(heart_rates, hrv, resp_rates, movement)
     print("Sleep Analysis done!")
     print(sp_stats)
 
-    # Plot everything
+    # Create the Plot
     print("Plotting...")
     plot_dash(
         data["smoothed_v"].to_numpy(),

@@ -16,7 +16,8 @@ p.setLabel("left", "Value")
 p.setLabel("bottom", "Samples")
 
 # set the number of samples in the window
-data = np.zeros(800)
+data_to_plot = np.zeros(800)
+buffer = np.zeros(5000)
 
 # add Plot
 curve = p.plot(pen=mkColor(51, 102, 255))
@@ -35,11 +36,11 @@ def update():
     raw = ArduinoSerial.readSerial(SER)
     if raw:
         # shift left
-        data[:-1] = data[1:]
+        data_to_plot[:-1] = data_to_plot[1:]
 
         # subtract the offset for every new value to zero the Plot
-        data[-1] = raw[1] - tare
-        curve.setData(data)
+        data_to_plot[-1] = raw[1] - tare
+        curve.setData(data_to_plot)
         app.processEvents()
 
 
