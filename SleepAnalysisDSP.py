@@ -91,7 +91,7 @@ def group_list(raw_list: list):
 
 def filter_hr(smoothed_v: pd.DataFrame, fs):
     lowcut = 0.66
-    highcut = 2.33
+    highcut = 2.0
     data["filtered_hr"] = butter_bandpass_filter(
         smoothed_v.to_numpy(dtype=float),
         lowcut,
@@ -137,7 +137,7 @@ def hr_hrv(hr, fs):
 
 def filter_rr(smoothed_v: pd.DataFrame, fs):
     lowcut = 0.1
-    highcut = 0.66
+    highcut = 0.5
     data["filtered_rr"] = butter_bandpass_filter(
         smoothed_v.to_numpy(dtype=float),
         lowcut,
@@ -225,6 +225,8 @@ def sleep_phases(heart_rates, rmssd, resp_rates, movement):
     window_width = 20
     padding = 35
 
+    # TODO Einschlafen, Aufwachen, bessere Wachphasenlogik erstellen
+
     # go through the movement data using a window
     for upper in range(window_width, length, step):
         # check if end is reached, calculate the last segment as awake
@@ -274,14 +276,15 @@ def sleep_phases(heart_rates, rmssd, resp_rates, movement):
             sp_vals.extend([sleep_phase] * (step))
 
     # stats for sleep duration/quality
-    # TODO write sleep stats for interruptions
+    sp_sequence, _, _ = group_list(sp_vals)
 
     stats = {}
     stats["Duration"] = "{:02d}:{:02d}".format(*divmod(len(sp_vals), 60)) + " h"
     stats["Deep"] = "{:02d}:{:02d}".format(*divmod(sp_vals.count(1), 60)) + " h"
     stats["Light"] = "{:02d}:{:02d}".format(*divmod(sp_vals.count(2), 60)) + " h"
     stats["REM"] = "{:02d}:{:02d}".format(*divmod(sp_vals.count(3), 60)) + " h"
-    stats["Interruptions"] = str(0)
+    # don't include first and last wake phase (going to sleep, waking up)
+    stats["Interruptions"] = sp_sequence[1:-1].count(4)
     stats["Average HR"] = str(int(np.nanmedian(heart_rates))) + " bpm"
     stats["Average RR"] = str((np.nanmedian(resp_rates))) + " bpm"
 
@@ -310,7 +313,7 @@ def plot_dash(
     - Sleep Phases"""
 
     fig = plt.figure(tight_layout=True)
-    fig.set_size_inches(16, 9)
+    fig.set_size_inches(17, 9)
     fig.suptitle(f"Sleep Analysis using BCG", fontsize=16)
 
     # create layout
@@ -357,14 +360,14 @@ def plot_dash(
         # this only works for fixed sample rate of 85.2 Hz, good enough for now
         np.linspace(0, 2575 / fs_sm, 2575),
         # TODO make bounds non static
-        rrdata_filt[int(len(rrdata_filt) * 0.4) : int(len(rrdata_filt) * 0.4) + 2575],
+        rrdata_filt[int(len(rrdata_filt) * 0.2) : int(len(rrdata_filt) * 0.2) + 2575],
         color="#008000",
     )
     ax3.plot(
         # this only works for fixed sample rate of 85.2 Hz, good enough for now
         np.linspace(0, 2575 / fs_sm, 2575),
         # TODO make bounds non static
-        hrdata_filt[int(len(hrdata_filt) * 0.4) : int(len(hrdata_filt) * 0.4) + 2575],
+        hrdata_filt[int(len(hrdata_filt) * 0.2) : int(len(hrdata_filt) * 0.2) + 2575],
         color="#F05C3C",
     )
     ax4.bar(rr_section_timestamps, rr_sections, color="#C7E4BD", width=1)
@@ -426,7 +429,7 @@ if __name__ == "__main__":
 
     # read the csv file into a pandas dataframe
     print("Reading Data from File...")
-    FILE = "Sensordata\RawData02122021.csv"
+    FILE = "Sensordata\RawData18012022.csv"
     data = pd.read_csv(FILE, names=["timestamp", "value"], delimiter=",")
     print("Complete!")
 
