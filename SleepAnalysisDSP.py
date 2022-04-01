@@ -3,6 +3,7 @@ Output parameters are: List of HeartR, HRV, RespR, MvtR, SleepPhase,
 SleepPhase durations, avg. HR, RR"""
 
 from datetime import timedelta
+from email import header
 import numpy as np
 from matplotlib.patches import FancyBboxPatch
 import matplotlib.pyplot as plt
@@ -275,8 +276,13 @@ def sleep_phases(heart_rates, rmssd, resp_rates, movement):
             # set the sleep phase for current segment
             sp_vals.extend([sleep_phase] * (step))
 
+    # quick and dirty fix for lenght issue (1 missing)
+    sp_vals.extend([sleep_phase])
+
     # stats for sleep duration/quality
-    sp_sequence, _, _ = group_list(sp_vals)
+    sp_sequence, _, _ = group_list(
+        sp_vals
+    )  # doing it here just to get the interruptions
 
     stats = {}
     stats["Duration"] = "{:02d}:{:02d}".format(*divmod(len(sp_vals), 60)) + " h"
@@ -284,6 +290,7 @@ def sleep_phases(heart_rates, rmssd, resp_rates, movement):
     stats["Light"] = "{:02d}:{:02d}".format(*divmod(sp_vals.count(2), 60)) + " h"
     stats["REM"] = "{:02d}:{:02d}".format(*divmod(sp_vals.count(3), 60)) + " h"
     # don't include first and last wake phase (going to sleep, waking up)
+    # TODO replace interruptions with "wake time"
     stats["Interruptions"] = sp_sequence[1:-1].count(4)
     stats["Average HR"] = str(int(np.nanmedian(heart_rates))) + " bpm"
     stats["Average RR"] = str((np.nanmedian(resp_rates))) + " bpm"
@@ -429,7 +436,8 @@ if __name__ == "__main__":
 
     # read the csv file into a pandas dataframe
     print("Reading Data from File...")
-    FILE = "Sensordata\RawData07122021.csv"
+    FILE = "Sensordata\RawData28112021.csv"
+    # name = "28112021_sensor_data"
     data = pd.read_csv(FILE, names=["timestamp", "value"], delimiter=",")
     print("Complete!")
 
@@ -482,9 +490,19 @@ if __name__ == "__main__":
 
     # Determine Sleep Phases
     print("Sleep Analysis...")
-    sp_segments, sp_stats = sleep_phases(heart_rates, hrv, resp_rates, movement)
+    sp_values, sp_stats = sleep_phases(heart_rates, hrv, resp_rates, movement)
     print("Sleep Analysis done!")
     print(sp_stats)
+
+    # # write file for evaluation
+    # headings = {
+    #     "hr_sensor": list(map(int, heart_rates)),
+    #     "rr_sensor": list(map(int, resp_rates)),
+    #     "ss_sensor": list(map(int, sp_values)),
+    # }
+    # df = pd.DataFrame(headings)
+    # print(df)
+    # df.to_csv("Sensordata/clean/" + name, encoding="utf-8", index=False)
 
     # Create the Plot
     print("Plotting...")
@@ -499,6 +517,6 @@ if __name__ == "__main__":
         data["smoothed_ts"].to_numpy(),
         hr_timecodes,
         rr_timecodes,
-        sp_segments,
+        sp_values,
         sp_stats,
     )
