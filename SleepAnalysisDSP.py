@@ -429,7 +429,7 @@ if __name__ == "__main__":
 
     # read the csv file into a pandas dataframe
     print("Reading Data from File...")
-    FILE = "Sensordata\RawData18012022.csv"
+    FILE = "Sensordata\RawData07122021.csv"
     data = pd.read_csv(FILE, names=["timestamp", "value"], delimiter=",")
     print("Complete!")
 
