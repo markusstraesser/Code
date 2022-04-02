@@ -3,9 +3,7 @@ Output parameters are: List of HeartR, HRV, RespR, MvtR, SleepPhase,
 SleepPhase durations, avg. HR, RR"""
 
 from datetime import timedelta
-from email import header
 import numpy as np
-from matplotlib.patches import FancyBboxPatch
 import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.signal import butter, lfilter
@@ -122,7 +120,7 @@ def hr_hrv(hr, fs):
                 high_precision=True,
             )
             # write the values to corresponding list
-            hr_vals.append(np.round(m["bpm"], 0))
+            hr_vals.append(np.round(m["bpm"], 1))
             hrv_vals.append(np.round(m["rmssd"], 0))
             timecodes.append(timer)
         except Exception:
@@ -133,6 +131,9 @@ def hr_hrv(hr, fs):
         # set new lower bound 10 seconds before upper
         lower = upper - int((fs * 10))
         timer += 1
+    # # quick fix for 02122021
+    # hr_vals.append(np.nan)
+    # timecodes.append(timer + 1)
     return hr_vals, hrv_vals, timecodes
 
 
@@ -187,8 +188,10 @@ def rr_mvt(rr, fs):
                 max_val = i
         # difference between min/max is the movement magnitude
         mvt_vals.append(max_val - min_val)
-        # normalize the data in range 100 for %
-        mvt_vals_norm = [int(i * 100 / max(mvt_vals)) for i in mvt_vals]
+        # normalize the data in range 10;
+        # this works as a good classification because of how the averaging in
+        # the sleep phase calculation ist done.
+        mvt_vals_norm = [int(i * 10 / max(mvt_vals)) for i in mvt_vals]
         # keep track of the minute
         timecodes.append(timer)
         # set new bounds for window
@@ -223,12 +226,21 @@ def sleep_phases(heart_rates, rmssd, resp_rates, movement):
     sleep_phase = 0
     length = len(movement)
     step = 1
-    window_width = 20
-    padding = 35
+    window_width = 10
+    padding = 50
+
+    hr_averaged_plot = []
+    rmssd_averaged_plot = []
+    rr_averaged_plot = []
+    mvt_averaged_plot = []
+    hr_reference_plot = []
+    rmssd_reference_plot = []
+    rr_reference_plot = []
+    mvt_reference_plot = []
 
     # TODO Einschlafen, Aufwachen, bessere Wachphasenlogik erstellen
 
-    # go through the movement data using a window
+    # go through the movement data using a window of the sensordata
     for upper in range(window_width, length, step):
         # check if end is reached, calculate the last segment as awake
         if (length - upper) <= step:
@@ -237,19 +249,21 @@ def sleep_phases(heart_rates, rmssd, resp_rates, movement):
             sp_vals.extend([2] * (upper - lower))
         else:
             lower = upper - window_width
-            # set medians for the window
-            hr_avg_segment = int(np.nanmedian(heart_rates[lower:upper]))
-            # rmssd_avg_segment = int(np.nanmedian(rmssd[lower:upper]))
+            # set median values for the window: this is the (smoothed) sensordata
+            hr_avg_segment = np.nanmedian(heart_rates[lower:upper])
+            rmssd_avg_segment = int(np.nanmedian(rmssd[lower:upper]))
             rr_avg_segment = np.nanmedian(resp_rates[lower:upper])
-            mvt_avg_segment = int(np.nanmedian(movement[lower:upper]))
-            # calculate median of surrounding minutes as threshold for +/- of sleep paramters
+            mvt_avg_segment = np.nanmean(movement[lower:upper])
+            # calculate median of surrounding minutes as threshold for +/- of sleep paramters;
+            # this is what the sensordata is beeing compared to
             # check if out of bounds and adjust accordingly
             lo = max(lower - padding, 0)
             hi = min(upper + padding, length)
-            hr_avg = int(np.nanmedian(heart_rates[lo:hi]))
-            # rmssd_avg = int(np.nanmedian(rmssd[lo:hi]))
+            hr_avg = np.nanmedian(heart_rates[lo:hi])
+            rmssd_avg = int(np.nanmedian(rmssd[lo:hi]))
             rr_avg = np.nanmedian(resp_rates[lo:hi])
-            mvt_avg = int(np.nanmean(movement[lo:hi]))
+            # movement is averaged over the whole night
+            mvt_avg = np.nanmean(movement) * 2.5
             # determine sleep phase
             if (
                 hr_avg_segment >= hr_avg
@@ -276,6 +290,16 @@ def sleep_phases(heart_rates, rmssd, resp_rates, movement):
             # set the sleep phase for current segment
             sp_vals.extend([sleep_phase] * (step))
 
+            # write the median sensordata of the window into a list
+            hr_averaged_plot.append(hr_avg_segment)
+            rmssd_averaged_plot.append(rmssd_avg_segment)
+            rr_averaged_plot.append(rr_avg_segment)
+            mvt_averaged_plot.append(mvt_avg_segment)
+            hr_reference_plot.append(hr_avg)
+            rmssd_reference_plot.append(rmssd_avg)
+            rr_reference_plot.append(rr_avg)
+            mvt_reference_plot.append(mvt_avg)
+
     # quick and dirty fix for lenght issue (1 missing)
     sp_vals.extend([sleep_phase])
 
@@ -295,7 +319,18 @@ def sleep_phases(heart_rates, rmssd, resp_rates, movement):
     stats["Average HR"] = str(int(np.nanmedian(heart_rates))) + " bpm"
     stats["Average RR"] = str((np.nanmedian(resp_rates))) + " bpm"
 
-    return sp_vals, stats
+    return (
+        sp_vals,
+        stats,
+        hr_averaged_plot,
+        rmssd_averaged_plot,
+        rr_averaged_plot,
+        mvt_averaged_plot,
+        hr_reference_plot,
+        rmssd_reference_plot,
+        rr_reference_plot,
+        mvt_reference_plot,
+    )
 
 
 # all the plotting stuff
@@ -436,8 +471,8 @@ if __name__ == "__main__":
 
     # read the csv file into a pandas dataframe
     print("Reading Data from File...")
-    FILE = "Sensordata\RawData28112021.csv"
-    # name = "28112021_sensor_data"
+    FILE = "Sensordata\RawData08122021.csv"
+    name = "08122021_sensor_data"
     data = pd.read_csv(FILE, names=["timestamp", "value"], delimiter=",")
     print("Complete!")
 
@@ -490,33 +525,66 @@ if __name__ == "__main__":
 
     # Determine Sleep Phases
     print("Sleep Analysis...")
-    sp_values, sp_stats = sleep_phases(heart_rates, hrv, resp_rates, movement)
+    (
+        sp_values,
+        sp_stats,
+        hr_avg_plot,
+        rmssd_avg_plot,
+        rr_avg_plot,
+        mvt_avg_plot,
+        hr_ref_plot,
+        rmssd_ref_plot,
+        rr_ref_plot,
+        mvt_ref_plotv,
+    ) = sleep_phases(heart_rates, hrv, resp_rates, movement)
     print("Sleep Analysis done!")
     print(sp_stats)
 
-    # # write file for evaluation
-    # headings = {
-    #     "hr_sensor": list(map(int, heart_rates)),
-    #     "rr_sensor": list(map(int, resp_rates)),
-    #     "ss_sensor": list(map(int, sp_values)),
-    # }
-    # df = pd.DataFrame(headings)
-    # print(df)
-    # df.to_csv("Sensordata/clean/" + name, encoding="utf-8", index=False)
+    # # plot the data of sleep phase calculation
+    # plt.rcParams["figure.figsize"] = [10, 10]
+    # plt.subplot(221, title="HR_avg")
+    # plt.plot(hr_avg_plot, label="HR_window")
+    # plt.plot(hr_ref_plot, label="HR_ref")
+    # plt.legend()
+    # plt.subplot(222, title="RMSSD_avg")
+    # plt.plot(rmssd_avg_plot, label="RMSSD_window")
+    # plt.plot(rmssd_ref_plot, label="RMSSD_ref")
+    # plt.legend()
+    # plt.subplot(223, title="RR_avg")
+    # plt.plot(rr_avg_plot, label="RR_window")
+    # plt.plot(rr_ref_plot, label="RR_ref")
+    # plt.legend()
+    # plt.subplot(224, title="MVT_avg")
+    # plt.plot(mvt_avg_plot, label="MVT_window")
+    # plt.plot(mvt_ref_plotv, label="MVT_ref")
+    # plt.legend()
+    # plt.tight_layout()
+    # plt.show()
 
-    # Create the Plot
-    print("Plotting...")
-    plot_dash(
-        data["smoothed_v"].to_numpy(),
-        hr_filt,
-        rr_filt,
-        heart_rates,
-        hrv,
-        resp_rates,
-        movement,
-        data["smoothed_ts"].to_numpy(),
-        hr_timecodes,
-        rr_timecodes,
-        sp_values,
-        sp_stats,
-    )
+    # write file for evaluation
+    headings = {
+        "hr_sensor": list(map(int, heart_rates)),
+        "rr_sensor": list(map(int, resp_rates)),
+        "ss_sensor": list(map(int, sp_values)),
+    }
+    df = pd.DataFrame(headings)
+    print(df)
+    df.to_csv("Sensordata/clean/" + name, encoding="utf-8", index=False)
+
+    # # Create the Plot
+    # print("Plotting...")
+
+    # plot_dash(
+    #     data["smoothed_v"].to_numpy(),
+    #     hr_filt,
+    #     rr_filt,
+    #     heart_rates,
+    #     hrv,
+    #     resp_rates,
+    #     movement,
+    #     data["smoothed_ts"].to_numpy(),
+    #     hr_timecodes,
+    #     rr_timecodes,
+    #     sp_values,
+    #     sp_stats,
+    # )
