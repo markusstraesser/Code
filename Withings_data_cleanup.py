@@ -1,5 +1,3 @@
-from sqlite3 import Timestamp
-from numpy import column_stack
 import pandas as pd
 import matplotlib.pyplot as plt
 
