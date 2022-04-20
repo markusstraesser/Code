@@ -317,6 +317,7 @@ def sleep_phases(heart_rates, rmssd, resp_rates, movement):
     stats["Mittlere HF"] = str(int(np.nanmedian(heart_rates))) + " bpm"
     stats["Mittlere AF"] = str((np.nanmedian(resp_rates))) + " bpm"
 
+    # TODO return plot object and sleep data object instead of many lists
     return (
         sp_vals,
         stats,
