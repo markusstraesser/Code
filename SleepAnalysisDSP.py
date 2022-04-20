@@ -238,8 +238,6 @@ def sleep_phases(heart_rates, rmssd, resp_rates, movement):
     rr_reference_plot = []
     mvt_reference_plot = []
 
-    # TODO Einschlafen, Aufwachen, bessere Wachphasenlogik erstellen
-
     # go through the movement data using a window of the sensordata
     for upper in range(window_width, length, step):
         # check if end is reached, calculate the last segment as awake
@@ -300,7 +298,7 @@ def sleep_phases(heart_rates, rmssd, resp_rates, movement):
             rr_reference_plot.append(rr_avg)
             mvt_reference_plot.append(mvt_avg)
 
-    # quick and dirty fix for lenght issue (1 missing)
+    # quick fix for lenght issue (1 missing)
     sp_vals.extend([sleep_phase])
 
     # stats for sleep duration/quality
@@ -309,15 +307,15 @@ def sleep_phases(heart_rates, rmssd, resp_rates, movement):
     )  # doing it here just to get the interruptions
 
     stats = {}
-    stats["Duration"] = "{:02d}:{:02d}".format(*divmod(len(sp_vals), 60)) + " h"
-    stats["Deep"] = "{:02d}:{:02d}".format(*divmod(sp_vals.count(1), 60)) + " h"
-    stats["Light"] = "{:02d}:{:02d}".format(*divmod(sp_vals.count(2), 60)) + " h"
+    stats["Dauer"] = "{:02d}:{:02d}".format(*divmod(len(sp_vals), 60)) + " h"
+    stats["Tief"] = "{:02d}:{:02d}".format(*divmod(sp_vals.count(1), 60)) + " h"
+    stats["Leicht"] = "{:02d}:{:02d}".format(*divmod(sp_vals.count(2), 60)) + " h"
     stats["REM"] = "{:02d}:{:02d}".format(*divmod(sp_vals.count(3), 60)) + " h"
     # don't include first and last wake phase (going to sleep, waking up)
     # TODO replace interruptions with "wake time"
-    stats["Interruptions"] = sp_sequence[1:-1].count(4)
-    stats["Average HR"] = str(int(np.nanmedian(heart_rates))) + " bpm"
-    stats["Average RR"] = str((np.nanmedian(resp_rates))) + " bpm"
+    stats["Unterbrechungen"] = sp_sequence[1:-1].count(4)
+    stats["Mittlere HF"] = str(int(np.nanmedian(heart_rates))) + " bpm"
+    stats["Mittlere AF"] = str((np.nanmedian(resp_rates))) + " bpm"
 
     return (
         sp_vals,
@@ -412,13 +410,13 @@ def plot_dash(
         hrdata_filt[int(len(hrdata_filt) * 0.2) : int(len(hrdata_filt) * 0.2) + 2575],
         color="#F05C3C",
     )
-    ax4.bar(rr_section_timestamps, rr_sections, color="#C7E4BD", width=1)
+    # ax4.bar(rr_section_timestamps, rr_sections, color="#C7E4BD", width=1)
     ax4.plot(rr_section_timestamps, rr_sections, color="#008000")
-    ax5.bar(hr_section_timestamps, hr_sections, color="#F8C8BE", width=1)
+    # ax5.bar(hr_section_timestamps, hr_sections, color="#F8C8BE", width=1)
     ax5.plot(hr_section_timestamps, hr_sections, color="#F05C3C")
-    ax6.bar(hr_section_timestamps, hrv_sections, color="#FFCFAA", width=1)
+    # ax6.bar(hr_section_timestamps, hrv_sections, color="#FFCFAA", width=1)
     ax6.plot(hr_section_timestamps, hrv_sections, color="#E1701A")
-    ax7.bar(rr_section_timestamps, mvt_sections, color="#E7C9FC", width=1)
+    # ax7.bar(rr_section_timestamps, mvt_sections, color="#E7C9FC", width=1)
     ax7.plot(rr_section_timestamps, mvt_sections, color="#9551C4")
     ax8.bar(tick_x_pos, sp_sequence, color=cc, width=sp_lengths)
 
@@ -471,8 +469,8 @@ if __name__ == "__main__":
 
     # read the csv file into a pandas dataframe
     print("Reading Data from File...")
-    FILE = "Sensordata\RawData08122021.csv"
-    name = "08122021_sensor_data"
+    FILE = "Sensordata\RawData02122021.csv"
+    name = "05122021_sensor_data"
     data = pd.read_csv(FILE, names=["timestamp", "value"], delimiter=",")
     print("Complete!")
 
@@ -540,51 +538,51 @@ if __name__ == "__main__":
     print("Sleep Analysis done!")
     print(sp_stats)
 
-    # # plot the data of sleep phase calculation
-    # plt.rcParams["figure.figsize"] = [10, 10]
-    # plt.subplot(221, title="HR_avg")
-    # plt.plot(hr_avg_plot, label="HR_window")
-    # plt.plot(hr_ref_plot, label="HR_ref")
-    # plt.legend()
-    # plt.subplot(222, title="RMSSD_avg")
-    # plt.plot(rmssd_avg_plot, label="RMSSD_window")
-    # plt.plot(rmssd_ref_plot, label="RMSSD_ref")
-    # plt.legend()
-    # plt.subplot(223, title="RR_avg")
-    # plt.plot(rr_avg_plot, label="RR_window")
-    # plt.plot(rr_ref_plot, label="RR_ref")
-    # plt.legend()
-    # plt.subplot(224, title="MVT_avg")
-    # plt.plot(mvt_avg_plot, label="MVT_window")
-    # plt.plot(mvt_ref_plotv, label="MVT_ref")
-    # plt.legend()
-    # plt.tight_layout()
-    # plt.show()
+    # plot the data of sleep phase calculation
+    plt.rcParams["figure.figsize"] = [10, 10]
+    plt.subplot(221, title="HR_avg")
+    plt.plot(hr_avg_plot, label="HR_window")
+    plt.plot(hr_ref_plot, label="HR_ref")
+    plt.legend()
+    plt.subplot(222, title="RMSSD_avg")
+    plt.plot(rmssd_avg_plot, label="RMSSD_window")
+    plt.plot(rmssd_ref_plot, label="RMSSD_ref")
+    plt.legend()
+    plt.subplot(223, title="RR_avg")
+    plt.plot(rr_avg_plot, label="RR_window")
+    plt.plot(rr_ref_plot, label="RR_ref")
+    plt.legend()
+    plt.subplot(224, title="MVT_avg")
+    plt.plot(mvt_avg_plot, label="MVT_window")
+    plt.plot(mvt_ref_plotv, label="MVT_ref")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
-    # write file for evaluation
-    headings = {
-        "hr_sensor": list(map(int, heart_rates)),
-        "rr_sensor": list(map(int, resp_rates)),
-        "ss_sensor": list(map(int, sp_values)),
-    }
-    df = pd.DataFrame(headings)
-    print(df)
-    df.to_csv("Sensordata/clean/" + name, encoding="utf-8", index=False)
+    # # write file for evaluation
+    # headings = {
+    #     "hr_sensor": list(map(int, heart_rates)),
+    #     "rr_sensor": list(map(int, resp_rates)),
+    #     "ss_sensor": list(map(int, sp_values)),
+    # }
+    # df = pd.DataFrame(headings)
+    # print(df)
+    # df.to_csv("Sensordata/clean/" + name, encoding="utf-8", index=False)
 
-    # # Create the Plot
-    # print("Plotting...")
+    # Create the Plot
+    print("Plotting...")
 
-    # plot_dash(
-    #     data["smoothed_v"].to_numpy(),
-    #     hr_filt,
-    #     rr_filt,
-    #     heart_rates,
-    #     hrv,
-    #     resp_rates,
-    #     movement,
-    #     data["smoothed_ts"].to_numpy(),
-    #     hr_timecodes,
-    #     rr_timecodes,
-    #     sp_values,
-    #     sp_stats,
-    # )
+    plot_dash(
+        data["smoothed_v"].to_numpy(),
+        hr_filt,
+        rr_filt,
+        heart_rates,
+        hrv,
+        resp_rates,
+        movement,
+        data["smoothed_ts"].to_numpy(),
+        hr_timecodes,
+        rr_timecodes,
+        sp_values,
+        sp_stats,
+    )
