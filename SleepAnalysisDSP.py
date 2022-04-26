@@ -332,7 +332,6 @@ def sleep_phases(heart_rates, rmssd, resp_rates, movement):
     )
 
 
-# all the plotting stuff
 def plot_dash(
     raw_data,
     hrdata_filt,
@@ -353,21 +352,21 @@ def plot_dash(
     - Heartrate, HR-Variability, Respiratory Rate and Movement in 1 Minute Sections
     - Sleep Phases"""
 
-    fig = plt.figure(tight_layout=True)
-    fig.set_size_inches(17, 9)
+    fig = plt.figure()
+    fig.set_size_inches(11, 10)
     fig.suptitle(f"Sleep Analysis using BCG", fontsize=16)
 
     # create layout
-    gs = gridspec.GridSpec(nrows=6, ncols=4)
+    gs = gridspec.GridSpec(nrows=11, ncols=4)
 
-    ax1 = fig.add_subplot(gs[0, :])
-    ax2 = fig.add_subplot(gs[1, :2])
-    ax3 = fig.add_subplot(gs[1, 2:])
-    ax4 = fig.add_subplot(gs[2:4, 0])
-    ax5 = fig.add_subplot(gs[2:4, 1])
-    ax6 = fig.add_subplot(gs[2:4, 2])
-    ax7 = fig.add_subplot(gs[2:4, 3])
-    ax8 = fig.add_subplot(gs[-2:, :])
+    ax1 = fig.add_subplot(gs[0:2, :])
+    ax2 = fig.add_subplot(gs[2:4, :2])
+    ax3 = fig.add_subplot(gs[2:4, 2:])
+    ax4 = fig.add_subplot(gs[4:6, 0:2])
+    ax5 = fig.add_subplot(gs[4:6, 2:])
+    ax6 = fig.add_subplot(gs[6:8, :2])
+    ax7 = fig.add_subplot(gs[6:8, 2:])
+    ax8 = fig.add_subplot(gs[-3:, :])
 
     # set titles
     ax1.set_title(f"Raw Sensor Data, Sampling Frequency: {fs_sm:.2f} Hz")
@@ -411,13 +410,13 @@ def plot_dash(
         hrdata_filt[int(len(hrdata_filt) * 0.2) : int(len(hrdata_filt) * 0.2) + 2575],
         color="#F05C3C",
     )
-    # ax4.bar(rr_section_timestamps, rr_sections, color="#C7E4BD", width=1)
+    ax4.bar(rr_section_timestamps, rr_sections, color="#C7E4BD", width=1)
     ax4.plot(rr_section_timestamps, rr_sections, color="#008000")
-    # ax5.bar(hr_section_timestamps, hr_sections, color="#F8C8BE", width=1)
+    ax5.bar(hr_section_timestamps, hr_sections, color="#F8C8BE", width=1)
     ax5.plot(hr_section_timestamps, hr_sections, color="#F05C3C")
-    # ax6.bar(hr_section_timestamps, hrv_sections, color="#FFCFAA", width=1)
+    ax6.bar(hr_section_timestamps, hrv_sections, color="#FFCFAA", width=1)
     ax6.plot(hr_section_timestamps, hrv_sections, color="#E1701A")
-    # ax7.bar(rr_section_timestamps, mvt_sections, color="#E7C9FC", width=1)
+    ax7.bar(rr_section_timestamps, mvt_sections, color="#E7C9FC", width=1)
     ax7.plot(rr_section_timestamps, mvt_sections, color="#9551C4")
     ax8.bar(tick_x_pos, sp_sequence, color=cc, width=sp_lengths)
 
@@ -445,24 +444,25 @@ def plot_dash(
     ax4.set_ylabel("Respiratory Rate [bpm]")
     ax5.set_ylabel("Heart Rate [bpm]")
     ax6.set_ylabel("RMSSD [ms]")
-    ax7.set_ylabel("Relative Magnitude [%]")
+    ax7.set_ylabel("Magnitude")
 
     # Create Textbox for sleep Stats
-    props = dict(boxstyle="round", facecolor="lightgrey")
+    props = dict(boxstyle="round", facecolor="white")
     stats_str = ", ".join("{}: {}".format(k, v) for k, v in sleep_stats.items())
-    # place a text box in upper left in axes coords
+    # place the text box
     ax8.text(
         0.5,
         -0.4,
         stats_str,
         transform=ax8.transAxes,
-        fontsize=14,
+        fontsize=11,
         verticalalignment="top",
         horizontalalignment="center",
         bbox=props,
     )
     # today = str(datetime.date.today())
     # plt.savefig(f"Plot_{today}.svg", format="svg")
+    plt.tight_layout()
     plt.show()
 
 
@@ -470,8 +470,8 @@ if __name__ == "__main__":
 
     # read the csv file into a pandas dataframe
     print("Reading Data from File...")
-    FILE = "Sensordata\RawData02122021.csv"
-    name = "05122021_sensor_data"
+    FILE = "Sensordata\RawData28112021.csv"
+    # name = "29112021_sensor_data"
     data = pd.read_csv(FILE, names=["timestamp", "value"], delimiter=",")
     print("Complete!")
 
@@ -540,21 +540,22 @@ if __name__ == "__main__":
     print(sp_stats)
 
     # plot the data of sleep phase calculation
-    plt.rcParams["figure.figsize"] = [10, 10]
-    plt.subplot(221, title="HR_avg")
-    plt.plot(hr_avg_plot, label="HR_window")
+    plt.rcParams["figure.figsize"] = [11, 5]
+    plt.suptitle("Parameter Classification against Reference", fontsize=16)
+    plt.subplot(221, title="Heart Rate Classification Data", ylabel="HR [bpm]")
+    plt.plot(hr_avg_plot, label="HR_avg_sensor")
     plt.plot(hr_ref_plot, label="HR_ref")
     plt.legend()
-    plt.subplot(222, title="RMSSD_avg")
-    plt.plot(rmssd_avg_plot, label="RMSSD_window")
+    plt.subplot(222, title="RMSSD Classification Data", ylabel="RMSSD [ms]")
+    plt.plot(rmssd_avg_plot, label="RMSSD_avg_sensor")
     plt.plot(rmssd_ref_plot, label="RMSSD_ref")
     plt.legend()
-    plt.subplot(223, title="RR_avg")
-    plt.plot(rr_avg_plot, label="RR_window")
+    plt.subplot(223, title="Respiratory Rate Classification Data", ylabel="RR [bpm]")
+    plt.plot(rr_avg_plot, label="RR_avg_sensor")
     plt.plot(rr_ref_plot, label="RR_ref")
     plt.legend()
-    plt.subplot(224, title="MVT_avg")
-    plt.plot(mvt_avg_plot, label="MVT_window")
+    plt.subplot(224, title="Movement Classification Data", ylabel="Magnitude")
+    plt.plot(mvt_avg_plot, label="MVT_avg_sensor")
     plt.plot(mvt_ref_plotv, label="MVT_ref")
     plt.legend()
     plt.tight_layout()
