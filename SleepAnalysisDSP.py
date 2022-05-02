@@ -2,9 +2,11 @@
 Output parameters are: List of HeartR, HRV, RespR, MvtR, SleepPhase,
 SleepPhase durations, avg. HR, RR"""
 
+from cProfile import label
 from datetime import timedelta
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 import pandas as pd
 from scipy.signal import butter, lfilter
 import heartpy as hp
@@ -108,6 +110,7 @@ def hr_hrv(hr, fs):
     """
     lower = 0
     timer = 0
+    failed = 0
     hr_vals, hrv_vals, timecodes = [], [], []
     # go through the hr data in 60 second steps with a window of length 70 seconds.
     # This means, each window is overlapping the last one by 10 seconds
@@ -125,6 +128,7 @@ def hr_hrv(hr, fs):
             timecodes.append(timer)
         except Exception:
             # if heartpy can't return valid values, skip one 60 second interval
+            failed += 1
             hr_vals.append(np.nan)
             hrv_vals.append(np.nan)
             timecodes.append(timer)
@@ -134,7 +138,8 @@ def hr_hrv(hr, fs):
     # # quick fix for 02122021
     # hr_vals.append(np.nan)
     # timecodes.append(timer + 1)
-    return hr_vals, hrv_vals, timecodes
+    failure_rate = failed / timer
+    return hr_vals, hrv_vals, timecodes, failure_rate
 
 
 def filter_rr(smoothed_v: pd.DataFrame, fs):
@@ -470,7 +475,7 @@ if __name__ == "__main__":
 
     # read the csv file into a pandas dataframe
     print("Reading Data from File...")
-    FILE = "Sensordata\RawData08122021.csv"
+    FILE = "Sensordata\RawData30112021.csv"
     # name = "29112021_sensor_data"
     data = pd.read_csv(FILE, names=["timestamp", "value"], delimiter=",")
     print("Complete!")
@@ -496,14 +501,49 @@ if __name__ == "__main__":
     # ignore warnings raised by heartpy
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        heart_rates, hrv, hr_timecodes = hr_hrv(resampled_hr_filt, (fs_sm * 4))
+        heart_rates, hrv, hr_timecodes, fail_rate = hr_hrv(
+            resampled_hr_filt, (fs_sm * 4)
+        )
     # remove outliers > +-5 sigma, converts to np.array
     heart_rates = reject_outliers(heart_rates, m=5)
+    # data for plot to visualize failed HR calc
+    hr_with_nans = np.copy(heart_rates)
+    hr_only_nans = np.zeros(len(heart_rates))
     # interpolate to fill gaps, https://stackoverflow.com/a/6520696
     nans_hr, x_hr = np.isnan(heart_rates), lambda z: z.nonzero()[0]
     heart_rates[nans_hr] = np.round(
         np.interp(x_hr(nans_hr), x_hr(~nans_hr), heart_rates[~nans_hr]), 0
     )
+    # plot all the HR calc stuff
+    hr_only_nans[nans_hr] = 150
+    sns.set(rc={"figure.figsize": (7, 4)})
+    sns.set_style("whitegrid")
+
+    plt.plot(
+        heart_rates, color="grey", alpha=0.8, label="HR Interpolation", linestyle="-."
+    )
+    plt.plot(
+        hr_with_nans,
+        color="#F05C3C",
+        alpha=1,
+        linewidth=1.5,
+        label="Heart Rate Calculated",
+    )
+    plt.bar(
+        hr_timecodes,
+        hr_only_nans,
+        width=1,
+        color="skyblue",
+        edgecolor="none",
+        alpha=0.5,
+        label=f"HR Failure Rate: {fail_rate * 100:.2f} %",
+    )
+    plt.ylim(top=max(heart_rates) + 20)
+    plt.ylabel("Herzfrequenz [bpm]")
+    plt.xlabel("Zeit [Minuten]")
+    plt.legend(loc="upper right")
+    plt.tight_layout()
+    plt.show()
     # needs to be np array
     hrv = np.array(hrv)
     nans_hrv, x_hrv = np.isnan(hrv), lambda z: z.nonzero()[0]
@@ -511,80 +551,81 @@ if __name__ == "__main__":
         np.interp(x_hrv(nans_hrv), x_hrv(~nans_hrv), hrv[~nans_hrv]), 0
     )
     print("Heartrates + Heartrate Variability done!")
-    print("Calculating Respiratory Rates + Movement...")
-    resp_rates, movement, rr_timecodes = rr_mvt(rr_filt, fs_sm)
-    # remove outliers > +-5 sigma, converts to np.array
-    resp_rates = reject_outliers(resp_rates, m=5)
-    # interpolate to fill gaps, https://stackoverflow.com/a/6520696
-    nans_rr, x_rr = np.isnan(resp_rates), lambda z: z.nonzero()[0]
-    resp_rates[nans_rr] = np.round(
-        np.interp(x_rr(nans_rr), x_rr(~nans_rr), resp_rates[~nans_rr]), 0
-    )
-    print("Respiratory Rates + Movement done!")
+    print(f"HR Failure Rate: {fail_rate * 100:.2f} %")
+    # print("Calculating Respiratory Rates + Movement...")
+    # resp_rates, movement, rr_timecodes = rr_mvt(rr_filt, fs_sm)
+    # # remove outliers > +-5 sigma, converts to np.array
+    # resp_rates = reject_outliers(resp_rates, m=5)
+    # # interpolate to fill gaps, https://stackoverflow.com/a/6520696
+    # nans_rr, x_rr = np.isnan(resp_rates), lambda z: z.nonzero()[0]
+    # resp_rates[nans_rr] = np.round(
+    #     np.interp(x_rr(nans_rr), x_rr(~nans_rr), resp_rates[~nans_rr]), 0
+    # )
+    # print("Respiratory Rates + Movement done!")
 
-    # Determine Sleep Phases
-    print("Sleep Analysis...")
-    (
-        sp_values,
-        sp_stats,
-        hr_avg_plot,
-        rmssd_avg_plot,
-        rr_avg_plot,
-        mvt_avg_plot,
-        hr_ref_plot,
-        rmssd_ref_plot,
-        rr_ref_plot,
-        mvt_ref_plotv,
-    ) = sleep_phases(heart_rates, hrv, resp_rates, movement)
-    print("Sleep Analysis done!")
-    print(sp_stats)
+    # # Determine Sleep Phases
+    # print("Sleep Analysis...")
+    # (
+    #     sp_values,
+    #     sp_stats,
+    #     hr_avg_plot,
+    #     rmssd_avg_plot,
+    #     rr_avg_plot,
+    #     mvt_avg_plot,
+    #     hr_ref_plot,
+    #     rmssd_ref_plot,
+    #     rr_ref_plot,
+    #     mvt_ref_plotv,
+    # ) = sleep_phases(heart_rates, hrv, resp_rates, movement)
+    # print("Sleep Analysis done!")
+    # print(sp_stats)
 
-    # plot the data of sleep phase calculation
-    plt.rcParams["figure.figsize"] = [11, 5]
-    plt.suptitle("Parameter Classification against Reference", fontsize=16)
-    plt.subplot(221, title="Heart Rate Classification Data", ylabel="HR [bpm]")
-    plt.plot(hr_avg_plot, label="HR_avg_sensor")
-    plt.plot(hr_ref_plot, label="HR_ref")
-    plt.legend()
-    plt.subplot(222, title="RMSSD Classification Data", ylabel="RMSSD [ms]")
-    plt.plot(rmssd_avg_plot, label="RMSSD_avg_sensor")
-    plt.plot(rmssd_ref_plot, label="RMSSD_ref")
-    plt.legend()
-    plt.subplot(223, title="Respiratory Rate Classification Data", ylabel="RR [bpm]")
-    plt.plot(rr_avg_plot, label="RR_avg_sensor")
-    plt.plot(rr_ref_plot, label="RR_ref")
-    plt.legend()
-    plt.subplot(224, title="Movement Classification Data", ylabel="Magnitude")
-    plt.plot(mvt_avg_plot, label="MVT_avg_sensor")
-    plt.plot(mvt_ref_plotv, label="MVT_ref")
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
+    # # plot the data of sleep phase calculation
+    # plt.rcParams["figure.figsize"] = [11, 5]
+    # plt.suptitle("Parameter Classification against Reference", fontsize=16)
+    # plt.subplot(221, title="Heart Rate Classification Data", ylabel="HR [bpm]")
+    # plt.plot(hr_avg_plot, label="HR_avg_sensor")
+    # plt.plot(hr_ref_plot, label="HR_ref")
+    # plt.legend()
+    # plt.subplot(222, title="RMSSD Classification Data", ylabel="RMSSD [ms]")
+    # plt.plot(rmssd_avg_plot, label="RMSSD_avg_sensor")
+    # plt.plot(rmssd_ref_plot, label="RMSSD_ref")
+    # plt.legend()
+    # plt.subplot(223, title="Respiratory Rate Classification Data", ylabel="RR [bpm]")
+    # plt.plot(rr_avg_plot, label="RR_avg_sensor")
+    # plt.plot(rr_ref_plot, label="RR_ref")
+    # plt.legend()
+    # plt.subplot(224, title="Movement Classification Data", ylabel="Magnitude")
+    # plt.plot(mvt_avg_plot, label="MVT_avg_sensor")
+    # plt.plot(mvt_ref_plotv, label="MVT_ref")
+    # plt.legend()
+    # plt.tight_layout()
+    # plt.show()
 
-    # # write file for evaluation
-    # headings = {
-    #     "hr_sensor": list(map(int, heart_rates)),
-    #     "rr_sensor": list(map(int, resp_rates)),
-    #     "ss_sensor": list(map(int, sp_values)),
-    # }
-    # df = pd.DataFrame(headings)
-    # print(df)
-    # df.to_csv("Sensordata/clean/" + name, encoding="utf-8", index=False)
+    # # # write file for evaluation
+    # # headings = {
+    # #     "hr_sensor": list(map(int, heart_rates)),
+    # #     "rr_sensor": list(map(int, resp_rates)),
+    # #     "ss_sensor": list(map(int, sp_values)),
+    # # }
+    # # df = pd.DataFrame(headings)
+    # # print(df)
+    # # df.to_csv("Sensordata/clean/" + name, encoding="utf-8", index=False)
 
-    # Create the Plot
-    print("Plotting...")
+    # # Create the Plot
+    # print("Plotting...")
 
-    plot_dash(
-        data["smoothed_v"].to_numpy(),
-        hr_filt,
-        rr_filt,
-        heart_rates,
-        hrv,
-        resp_rates,
-        movement,
-        data["smoothed_ts"].to_numpy(),
-        hr_timecodes,
-        rr_timecodes,
-        sp_values,
-        sp_stats,
-    )
+    # plot_dash(
+    #     data["smoothed_v"].to_numpy(),
+    #     hr_filt,
+    #     rr_filt,
+    #     heart_rates,
+    #     hrv,
+    #     resp_rates,
+    #     movement,
+    #     data["smoothed_ts"].to_numpy(),
+    #     hr_timecodes,
+    #     rr_timecodes,
+    #     sp_values,
+    #     sp_stats,
+    # )
