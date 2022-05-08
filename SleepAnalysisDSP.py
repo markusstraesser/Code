@@ -2,8 +2,8 @@
 Output parameters are: List of HeartR, HRV, RespR, MvtR, SleepPhase,
 SleepPhase durations, avg. HR, RR"""
 
-from cProfile import label
 from datetime import timedelta
+from itertools import count
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -90,16 +90,30 @@ def group_list(raw_list: list):
     return grouped_vals, val_count, x_pos
 
 
-def filter_hr(smoothed_v: pd.DataFrame, fs):
-    lowcut = 0.66
-    highcut = 2.0
-    data["filtered_hr"] = butter_bandpass_filter(
+def filter_bp(l, h, smoothed_v: pd.DataFrame, fs):
+    lowcut = l
+    highcut = h
+    bp_filter_output = butter_bandpass_filter(
         smoothed_v.to_numpy(dtype=float),
         lowcut,
         highcut,
         fs,
         order=4,
     )
+    return bp_filter_output
+
+
+def filter_hr(smoothed_v: pd.DataFrame, fs):
+    lowcut = 0.66
+    highcut = 2.0
+    hr_filter_output = butter_bandpass_filter(
+        smoothed_v.to_numpy(dtype=float),
+        lowcut,
+        highcut,
+        fs,
+        order=4,
+    )
+    return hr_filter_output
 
 
 def hr_hrv(hr, fs):
@@ -145,13 +159,14 @@ def hr_hrv(hr, fs):
 def filter_rr(smoothed_v: pd.DataFrame, fs):
     lowcut = 0.1
     highcut = 0.5
-    data["filtered_rr"] = butter_bandpass_filter(
+    rr_filter_output = butter_bandpass_filter(
         smoothed_v.to_numpy(dtype=float),
         lowcut,
         highcut,
         fs,
         order=3,
     )
+    return rr_filter_output
 
 
 def rr_mvt(rr, fs):
@@ -161,6 +176,7 @@ def rr_mvt(rr, fs):
     min/max values are calculated for movement magnitude.
     A window of 70 seconds worth of signal is moved in 60 second intervals.
     """
+    # TODO Write better RR logic to account for raw signal problems
     lower = 0
     timer = 0
     rr_vals, mvt_vals, timecodes, diffs = [], [], [], []
@@ -202,7 +218,9 @@ def rr_mvt(rr, fs):
         # set new bounds for window
         lower = upper - int((10 * fs))
         timer += 1
-    return rr_vals, mvt_vals_norm, timecodes
+    failed = np.count_nonzero(np.isnan(rr_vals))
+    failure_rate = failed / timer
+    return rr_vals, mvt_vals_norm, timecodes, failure_rate
 
 
 def sleep_phases(heart_rates, rmssd, resp_rates, movement):
@@ -488,13 +506,15 @@ if __name__ == "__main__":
     fs_sm = get_sampling_freq(data["smoothed_ts"].to_numpy())
 
     # filter (and upsample for HR) the smoothed datasets
+    # TODO separate the filter output and writing to dataframe. Slows down the program
     print("Filtering Signal...")
-    filter_hr(data["smoothed_v"], fs_sm)
-    hr_filt = data["filtered_hr"].to_numpy()
+    hr_filt = filter_hr(data["smoothed_v"], fs_sm)
     resampled_hr_filt = resample(hr_filt, len(hr_filt) * 4)
-    filter_rr(data["smoothed_v"], fs_sm)
-    rr_filt = data["filtered_rr"].to_numpy()
+    rr_filt = filter_rr(data["smoothed_v"], fs_sm)
     print("Filtering done!")
+    # write to dataframe
+    data["filtered_hr"] = hr_filt
+    data["filtered_rr"] = rr_filt
 
     # Calculate Heartrates, Respiratory Rates, HRV and Movement
     print("Calculating Heart Rates + Heartrate Variability...")
@@ -542,6 +562,7 @@ if __name__ == "__main__":
     plt.ylabel("Herzfrequenz [bpm]")
     plt.xlabel("Zeit [Minuten]")
     plt.legend(loc="upper right")
+    plt.grid(axis="x")
     plt.tight_layout()
     plt.show()
     # needs to be np array
