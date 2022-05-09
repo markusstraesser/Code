@@ -376,7 +376,7 @@ def plot_dash(
     - Sleep Phases"""
 
     fig = plt.figure()
-    fig.set_size_inches(11, 10)
+    fig.set_size_inches(12, 8)
     fig.suptitle(f"Sleep Analysis using BCG", fontsize=16)
 
     # create layout
@@ -573,55 +573,55 @@ if __name__ == "__main__":
     )
     print("Heartrates + Heartrate Variability done!")
     print(f"HR Failure Rate: {fail_rate * 100:.2f} %")
-    # print("Calculating Respiratory Rates + Movement...")
-    # resp_rates, movement, rr_timecodes = rr_mvt(rr_filt, fs_sm)
-    # # remove outliers > +-5 sigma, converts to np.array
-    # resp_rates = reject_outliers(resp_rates, m=5)
-    # # interpolate to fill gaps, https://stackoverflow.com/a/6520696
-    # nans_rr, x_rr = np.isnan(resp_rates), lambda z: z.nonzero()[0]
-    # resp_rates[nans_rr] = np.round(
-    #     np.interp(x_rr(nans_rr), x_rr(~nans_rr), resp_rates[~nans_rr]), 0
-    # )
-    # print("Respiratory Rates + Movement done!")
+    print("Calculating Respiratory Rates + Movement...")
+    resp_rates, movement, rr_timecodes, _ = rr_mvt(rr_filt, fs_sm)
+    # remove outliers > +-5 sigma, converts to np.array
+    resp_rates = reject_outliers(resp_rates, m=5)
+    # interpolate to fill gaps, https://stackoverflow.com/a/6520696
+    nans_rr, x_rr = np.isnan(resp_rates), lambda z: z.nonzero()[0]
+    resp_rates[nans_rr] = np.round(
+        np.interp(x_rr(nans_rr), x_rr(~nans_rr), resp_rates[~nans_rr]), 0
+    )
+    print("Respiratory Rates + Movement done!")
 
-    # # Determine Sleep Phases
-    # print("Sleep Analysis...")
-    # (
-    #     sp_values,
-    #     sp_stats,
-    #     hr_avg_plot,
-    #     rmssd_avg_plot,
-    #     rr_avg_plot,
-    #     mvt_avg_plot,
-    #     hr_ref_plot,
-    #     rmssd_ref_plot,
-    #     rr_ref_plot,
-    #     mvt_ref_plotv,
-    # ) = sleep_phases(heart_rates, hrv, resp_rates, movement)
-    # print("Sleep Analysis done!")
-    # print(sp_stats)
+    # Determine Sleep Phases
+    print("Sleep Analysis...")
+    (
+        sp_values,
+        sp_stats,
+        hr_avg_plot,
+        rmssd_avg_plot,
+        rr_avg_plot,
+        mvt_avg_plot,
+        hr_ref_plot,
+        rmssd_ref_plot,
+        rr_ref_plot,
+        mvt_ref_plotv,
+    ) = sleep_phases(heart_rates, hrv, resp_rates, movement)
+    print("Sleep Analysis done!")
+    print(sp_stats)
 
-    # # plot the data of sleep phase calculation
-    # plt.rcParams["figure.figsize"] = [11, 5]
-    # plt.suptitle("Parameter Classification against Reference", fontsize=16)
-    # plt.subplot(221, title="Heart Rate Classification Data", ylabel="HR [bpm]")
-    # plt.plot(hr_avg_plot, label="HR_avg_sensor")
-    # plt.plot(hr_ref_plot, label="HR_ref")
-    # plt.legend()
-    # plt.subplot(222, title="RMSSD Classification Data", ylabel="RMSSD [ms]")
-    # plt.plot(rmssd_avg_plot, label="RMSSD_avg_sensor")
-    # plt.plot(rmssd_ref_plot, label="RMSSD_ref")
-    # plt.legend()
-    # plt.subplot(223, title="Respiratory Rate Classification Data", ylabel="RR [bpm]")
-    # plt.plot(rr_avg_plot, label="RR_avg_sensor")
-    # plt.plot(rr_ref_plot, label="RR_ref")
-    # plt.legend()
-    # plt.subplot(224, title="Movement Classification Data", ylabel="Magnitude")
-    # plt.plot(mvt_avg_plot, label="MVT_avg_sensor")
-    # plt.plot(mvt_ref_plotv, label="MVT_ref")
-    # plt.legend()
-    # plt.tight_layout()
-    # plt.show()
+    # plot the data of sleep phase calculation
+    plt.rcParams["figure.figsize"] = [11, 5]
+    plt.suptitle("Parameter Classification against Reference", fontsize=16)
+    plt.subplot(221, title="Heart Rate Classification Data", ylabel="HR [bpm]")
+    plt.plot(hr_avg_plot, label="HR_avg_sensor")
+    plt.plot(hr_ref_plot, label="HR_ref")
+    plt.legend()
+    plt.subplot(222, title="RMSSD Classification Data", ylabel="RMSSD [ms]")
+    plt.plot(rmssd_avg_plot, label="RMSSD_avg_sensor")
+    plt.plot(rmssd_ref_plot, label="RMSSD_ref")
+    plt.legend()
+    plt.subplot(223, title="Respiratory Rate Classification Data", ylabel="RR [bpm]")
+    plt.plot(rr_avg_plot, label="RR_avg_sensor")
+    plt.plot(rr_ref_plot, label="RR_ref")
+    plt.legend()
+    plt.subplot(224, title="Movement Classification Data", ylabel="Magnitude")
+    plt.plot(mvt_avg_plot, label="MVT_avg_sensor")
+    plt.plot(mvt_ref_plotv, label="MVT_ref")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
     # # # write file for evaluation
     # # headings = {
@@ -636,17 +636,17 @@ if __name__ == "__main__":
     # # Create the Plot
     # print("Plotting...")
 
-    # plot_dash(
-    #     data["smoothed_v"].to_numpy(),
-    #     hr_filt,
-    #     rr_filt,
-    #     heart_rates,
-    #     hrv,
-    #     resp_rates,
-    #     movement,
-    #     data["smoothed_ts"].to_numpy(),
-    #     hr_timecodes,
-    #     rr_timecodes,
-    #     sp_values,
-    #     sp_stats,
-    # )
+    plot_dash(
+        data["smoothed_v"].to_numpy(),
+        hr_filt,
+        rr_filt,
+        heart_rates,
+        hrv,
+        resp_rates,
+        movement,
+        data["smoothed_ts"].to_numpy(),
+        hr_timecodes,
+        rr_timecodes,
+        sp_values,
+        sp_stats,
+    )
