@@ -13,6 +13,7 @@ import heartpy as hp
 from scipy.signal import resample, find_peaks
 import matplotlib.gridspec as gridspec
 import warnings
+from scipy.fft import rfft, rfftfreq
 
 
 def get_sampling_freq(timestamp):
@@ -145,6 +146,44 @@ def hr_hrv(hr, fs):
             failed += 1
             hr_vals.append(np.nan)
             hrv_vals.append(np.nan)
+            timecodes.append(timer)
+        # set new lower bound 10 seconds before upper
+        lower = upper - int((fs * 10))
+        timer += 1
+    # # quick fix for 02122021
+    # hr_vals.append(np.nan)
+    # timecodes.append(timer + 1)
+    failure_rate = failed / timer
+    return hr_vals, hrv_vals, timecodes, failure_rate
+
+
+def hr_fft(hr, fs):
+    """
+    Returns heart rate and rmssd for every minute.
+    A window of 70 seconds worth of signal is moved in 60 second intervals.
+    If heartpy fails to compute valid values, skip one interval.
+    """
+    lower = 0
+    timer = 0
+    failed = 0
+    hr_vals, hrv_vals, timecodes = [], [], []
+    # go through the hr data in 60 second steps with a window of length 70 seconds.
+    # This means, each window is overlapping the last one by 10 seconds
+    for upper in range(int(fs * 70), len(hr), int(fs * 60)):
+        try:
+            yf = rfft(hr[lower:upper])
+            xf = rfftfreq(len(hr[lower:upper]), 1 / fs)
+            # set hr to max of fft curve
+            hr_min_avg = 60 * xf[np.argmax((np.abs(yf)))]
+            # write the values to corresponding list
+            hr_vals.append(hr_min_avg)
+            # hrv_vals.append(np.round(m["rmssd"], 0))
+            timecodes.append(timer)
+        except Exception:
+            # if heartpy can't return valid values, skip one 60 second interval
+            failed += 1
+            hr_vals.append(np.nan)
+            # hrv_vals.append(np.nan)
             timecodes.append(timer)
         # set new lower bound 10 seconds before upper
         lower = upper - int((fs * 10))
