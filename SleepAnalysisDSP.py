@@ -159,14 +159,12 @@ def hr_hrv(hr, fs):
 
 def hr_fft(hr, fs):
     """
-    Returns heart rate and rmssd for every minute.
+    Returns average heart rate for every minute.
     A window of 70 seconds worth of signal is moved in 60 second intervals.
-    If heartpy fails to compute valid values, skip one interval.
+    If fft fails to compute valid values, skip one interval.
     """
     lower = 0
-    timer = 0
-    failed = 0
-    hr_vals, hrv_vals, timecodes = [], [], []
+    hr_vals = []
     # go through the hr data in 60 second steps with a window of length 70 seconds.
     # This means, each window is overlapping the last one by 10 seconds
     for upper in range(int(fs * 70), len(hr), int(fs * 60)):
@@ -177,22 +175,12 @@ def hr_fft(hr, fs):
             hr_min_avg = 60 * xf[np.argmax((np.abs(yf)))]
             # write the values to corresponding list
             hr_vals.append(hr_min_avg)
-            # hrv_vals.append(np.round(m["rmssd"], 0))
-            timecodes.append(timer)
         except Exception:
             # if heartpy can't return valid values, skip one 60 second interval
-            failed += 1
             hr_vals.append(np.nan)
-            # hrv_vals.append(np.nan)
-            timecodes.append(timer)
         # set new lower bound 10 seconds before upper
         lower = upper - int((fs * 10))
-        timer += 1
-    # # quick fix for 02122021
-    # hr_vals.append(np.nan)
-    # timecodes.append(timer + 1)
-    failure_rate = failed / timer
-    return hr_vals, hrv_vals, timecodes, failure_rate
+    return hr_vals
 
 
 def filter_rr(smoothed_v: pd.DataFrame, fs):
@@ -257,9 +245,31 @@ def rr_mvt(rr, fs):
         # set new bounds for window
         lower = upper - int((10 * fs))
         timer += 1
-    failed = np.count_nonzero(np.isnan(rr_vals))
-    failure_rate = failed / timer
-    return rr_vals, mvt_vals_norm, timecodes, failure_rate
+    return rr_vals, mvt_vals_norm, timecodes
+
+
+def rr_fft(rr, fs):
+    """
+    Returns respiratory rate for every minute.
+    A window of 70 seconds worth of signal is moved in 60 second intervals.
+    """
+    lower = 0
+    rr_vals = []
+    # start at 70 seconds, move in 60 sec intervals
+    for upper in range(int(fs * 70), len(rr), int(fs * 60)):
+        try:
+            yf = rfft(rr[lower:upper])
+            xf = rfftfreq(len(rr[lower:upper]), 1 / fs)
+            # set hr to max of fft curve
+            rr_min_avg = 60 * xf[np.argmax((np.abs(yf)))]
+            # write the values to corresponding list
+            rr_vals.append(rr_min_avg)
+        except Exception:
+            # if heartpy can't return valid values, skip one 60 second interval
+            rr_vals.append(np.nan)
+        # set new lower bound 10 seconds before upper
+        lower = upper - int((fs * 10))
+    return rr_vals
 
 
 def sleep_phases(heart_rates, rmssd, resp_rates, movement):
