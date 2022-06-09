@@ -228,7 +228,7 @@ def rr_mvt(rr, fs):
         # set min/max to the first value of the window
         min_val = window[0]
         max_val = window[0]
-        # go through the window and find min/max values
+        # go through the window and find index of min/max values
         for i in window:
             if i < min_val:
                 min_val = i
@@ -265,7 +265,7 @@ def rr_fft(rr, fs):
             # write the values to corresponding list
             rr_vals.append(rr_min_avg)
         except Exception:
-            # if heartpy can't return valid values, skip one 60 second interval
+            # if no valid value, skip one 60 second interval
             rr_vals.append(np.nan)
         # set new lower bound 10 seconds before upper
         lower = upper - int((fs * 10))
