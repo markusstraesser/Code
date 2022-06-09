@@ -3,7 +3,6 @@ Output parameters are: List of HeartR, HRV, RespR, MvtR, SleepPhase,
 SleepPhase durations, avg. HR, RR"""
 
 from datetime import timedelta
-from itertools import count
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
