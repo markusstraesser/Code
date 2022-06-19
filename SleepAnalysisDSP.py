@@ -424,8 +424,9 @@ def plot_dash(
     - Sleep Phases"""
 
     fig = plt.figure()
-    fig.set_size_inches(12, 8)
+    fig.set_size_inches(15, 10)
     fig.suptitle(f"Sleep Analysis using BCG", fontsize=16)
+    plt.style.use("default")
 
     # create layout
     gs = gridspec.GridSpec(nrows=11, ncols=4)
@@ -531,8 +532,6 @@ def plot_dash(
         horizontalalignment="center",
         bbox=props,
     )
-    # today = str(datetime.date.today())
-    # plt.savefig(f"Plot_{today}.svg", format="svg")
     plt.tight_layout()
     plt.show()
 
@@ -541,7 +540,7 @@ if __name__ == "__main__":
 
     # read the csv file into a pandas dataframe
     print("Reading Data from File...")
-    FILE = "Sensordata\RawData30112021.csv"
+    FILE = "Sensordata\RawData08122021.csv"
     # name = "29112021_sensor_data"
     data = pd.read_csv(FILE, names=["timestamp", "value"], delimiter=",")
     print("Complete!")
@@ -582,37 +581,37 @@ if __name__ == "__main__":
     heart_rates[nans_hr] = np.round(
         np.interp(x_hr(nans_hr), x_hr(~nans_hr), heart_rates[~nans_hr]), 0
     )
-    # plot all the HR calc stuff
-    hr_only_nans[nans_hr] = 150
-    sns.set(rc={"figure.figsize": (7, 4)})
-    sns.set_style("whitegrid")
+    # # plot HR Calc Visuals
+    # hr_only_nans[nans_hr] = 150
+    # sns.set(rc={"figure.figsize": (7, 4)})
+    # sns.set_style("whitegrid")
 
-    plt.plot(
-        heart_rates, color="grey", alpha=0.8, label="HR Interpolation", linestyle="-."
-    )
-    plt.plot(
-        hr_with_nans,
-        color="#F05C3C",
-        alpha=1,
-        linewidth=1.5,
-        label="Heart Rate Calculated",
-    )
-    plt.bar(
-        hr_timecodes,
-        hr_only_nans,
-        width=1,
-        color="skyblue",
-        edgecolor="none",
-        alpha=0.5,
-        label=f"HR Failure Rate: {fail_rate * 100:.2f} %",
-    )
-    plt.ylim(top=max(heart_rates) + 20)
-    plt.ylabel("Herzfrequenz [bpm]")
-    plt.xlabel("Zeit [Minuten]")
-    plt.legend(loc="upper right")
-    plt.grid(axis="x")
-    plt.tight_layout()
-    plt.show()
+    # plt.plot(
+    #     heart_rates, color="grey", alpha=0.8, label="HR Interpolation", linestyle="-."
+    # )
+    # plt.plot(
+    #     hr_with_nans,
+    #     color="#F05C3C",
+    #     alpha=1,
+    #     linewidth=1.5,
+    #     label="Heart Rate Calculated",
+    # )
+    # plt.bar(
+    #     hr_timecodes,
+    #     hr_only_nans,
+    #     width=1,
+    #     color="skyblue",
+    #     edgecolor="none",
+    #     alpha=0.5,
+    #     label=f"HR Failure Rate: {fail_rate * 100:.2f} %",
+    # )
+    # plt.ylim(top=max(heart_rates) + 20)
+    # plt.ylabel("Herzfrequenz [bpm]")
+    # plt.xlabel("Zeit [Minuten]")
+    # plt.legend(loc="upper right")
+    # plt.grid(axis="x")
+    # plt.tight_layout()
+    # plt.show()
     # needs to be np array
     hrv = np.array(hrv)
     nans_hrv, x_hrv = np.isnan(hrv), lambda z: z.nonzero()[0]
@@ -622,9 +621,12 @@ if __name__ == "__main__":
     print("Heartrates + Heartrate Variability done!")
     print(f"HR Failure Rate: {fail_rate * 100:.2f} %")
     print("Calculating Respiratory Rates + Movement...")
-    resp_rates, movement, rr_timecodes, _ = rr_mvt(rr_filt, fs_sm)
+    resp_rates, movement, rr_timecodes = rr_mvt(rr_filt, fs_sm)
     # remove outliers > +-5 sigma, converts to np.array
     resp_rates = reject_outliers(resp_rates, m=5)
+    rr_failed = np.count_nonzero(np.isnan(resp_rates))
+    rr_fail_rate = rr_failed / len(resp_rates)
+    print(f"RR Failure Rate: {rr_fail_rate*100:.2f} %")
     # interpolate to fill gaps, https://stackoverflow.com/a/6520696
     nans_rr, x_rr = np.isnan(resp_rates), lambda z: z.nonzero()[0]
     resp_rates[nans_rr] = np.round(
@@ -649,27 +651,27 @@ if __name__ == "__main__":
     print("Sleep Analysis done!")
     print(sp_stats)
 
-    # plot the data of sleep phase calculation
-    plt.rcParams["figure.figsize"] = [11, 5]
-    plt.suptitle("Parameter Classification against Reference", fontsize=16)
-    plt.subplot(221, title="Heart Rate Classification Data", ylabel="HR [bpm]")
-    plt.plot(hr_avg_plot, label="HR_avg_sensor")
-    plt.plot(hr_ref_plot, label="HR_ref")
-    plt.legend()
-    plt.subplot(222, title="RMSSD Classification Data", ylabel="RMSSD [ms]")
-    plt.plot(rmssd_avg_plot, label="RMSSD_avg_sensor")
-    plt.plot(rmssd_ref_plot, label="RMSSD_ref")
-    plt.legend()
-    plt.subplot(223, title="Respiratory Rate Classification Data", ylabel="RR [bpm]")
-    plt.plot(rr_avg_plot, label="RR_avg_sensor")
-    plt.plot(rr_ref_plot, label="RR_ref")
-    plt.legend()
-    plt.subplot(224, title="Movement Classification Data", ylabel="Magnitude")
-    plt.plot(mvt_avg_plot, label="MVT_avg_sensor")
-    plt.plot(mvt_ref_plotv, label="MVT_ref")
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
+    # # plot the data of sleep phase calculation
+    # plt.rcParams["figure.figsize"] = [11, 5]
+    # plt.suptitle("Parameter Classification against Reference", fontsize=16)
+    # plt.subplot(221, title="Heart Rate Classification Data", ylabel="HR [bpm]")
+    # plt.plot(hr_avg_plot, label="HR_avg_sensor")
+    # plt.plot(hr_ref_plot, label="HR_ref")
+    # plt.legend()
+    # plt.subplot(222, title="RMSSD Classification Data", ylabel="RMSSD [ms]")
+    # plt.plot(rmssd_avg_plot, label="RMSSD_avg_sensor")
+    # plt.plot(rmssd_ref_plot, label="RMSSD_ref")
+    # plt.legend()
+    # plt.subplot(223, title="Respiratory Rate Classification Data", ylabel="RR [bpm]")
+    # plt.plot(rr_avg_plot, label="RR_avg_sensor")
+    # plt.plot(rr_ref_plot, label="RR_ref")
+    # plt.legend()
+    # plt.subplot(224, title="Movement Classification Data", ylabel="Magnitude")
+    # plt.plot(mvt_avg_plot, label="MVT_avg_sensor")
+    # plt.plot(mvt_ref_plotv, label="MVT_ref")
+    # plt.legend()
+    # plt.tight_layout()
+    # plt.show()
 
     # # # write file for evaluation
     # # headings = {
